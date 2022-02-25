@@ -13,7 +13,9 @@ import (
 	"github.com/magefile/mage/target"
 )
 
-var bpfModuleList = []string{}
+var bpfModuleList = []string{
+	"vql/linux/tcpsnoop/tcpsnoop.bpf.o",
+}
 
 type BPFBuildEnv struct {
 	baseDir   string
