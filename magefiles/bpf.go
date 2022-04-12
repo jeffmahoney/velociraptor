@@ -16,6 +16,7 @@ import (
 var bpfModuleList = []string{
 	"vql/linux/tcpsnoop/tcpsnoop.bpf.o",
 	"vql/linux/dnssnoop/dnssnoop.bpf.o",
+	"vql/linux/chattrsnoop/chattrsnoop.bpf.o",
 }
 
 type BPFBuildEnv struct {
