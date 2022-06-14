@@ -311,6 +311,7 @@ body.dark-mode {
     color: var(--text-foreground);
 }
 
+.dark-mode .dropdown-item:focus,
 .dark-mode .dropdown-item:hover {
     background-color: var(--btn-default-background-hover);
 }
