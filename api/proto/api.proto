@@ -217,6 +217,31 @@ service API {
         };
     }
 
+    rpc GetUser(UserRequest) returns(VelociraptorUser) {
+        option(google.api.http) = {
+            get: "/api/v1/GetUser/{name}",
+        };
+    }
+
+    rpc CreateUser(CreateUserRequest) returns(VelociraptorUser) {
+        option (google.api.http) = {
+            post: "/api/v1/CreateUser",
+            body: "*"
+        };
+    }
+
+    rpc DeleteUser(UserRequest) returns(google.protobuf.Empty) {
+        option (google.api.http) = {
+            delete: "/api/v1/DeleteUser/{name}",
+            additional_bindings: {
+                custom: {
+                    kind: "HEAD",
+                    path: "/api/v1/DeleteUser/{name}",
+                },
+            }
+        };
+    }
+
     rpc GetUserFavorites(Favorite) returns(Favorites) {
         option (google.api.http) = {
             get: "/api/v1/GetUserFavorites",

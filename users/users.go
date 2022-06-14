@@ -30,6 +30,8 @@ import (
 	config_proto "www.velocidex.com/golang/velociraptor/config/proto"
 	datastore "www.velocidex.com/golang/velociraptor/datastore"
 	"www.velocidex.com/golang/velociraptor/paths"
+	"www.velocidex.com/golang/velociraptor/acls"
+	acl_proto "www.velocidex.com/golang/velociraptor/acls/proto"
 )
 
 const (
@@ -94,7 +96,7 @@ func ListUsers(config_obj *config_proto.Config) ([]*api_proto.VelociraptorUser, 
 		}
 
 		username := child.Base()
-		user_record, err := GetUser(config_obj, username)
+		user_record, err := GetUserWithPermissions(config_obj, username)
 		if err == nil {
 			result = append(result, user_record)
 		}
@@ -138,6 +140,23 @@ func GetUserWithHashes(config_obj *config_proto.Config, username string) (
 	}
 
 	return user_record, err
+}
+
+// Return the user record with permission but without password hashes
+func GetUserWithPermissions(config_obj *config_proto.Config, username string) (
+	*api_proto.VelociraptorUser, error) {
+	result, err := GetUser(config_obj, username)
+	if err != nil {
+		return nil, err
+	}
+
+	policy, err := acls.GetPolicy(config_obj, username)
+	if err != nil {
+		return result, nil
+	}
+	result.Permissions = policy
+
+	return result, nil
 }
 
 func SetUserOptions(config_obj *config_proto.Config,
@@ -185,4 +204,27 @@ func GetUserOptions(config_obj *config_proto.Config, username string) (
 		options.Options = default_user_options
 	}
 	return options, err
+}
+
+func DeleteUser(config_obj *config_proto.Config, username string) error {
+
+	user_path_manager := paths.UserPathManager{Name: username}
+	db, err := datastore.GetDB(config_obj)
+	if err != nil {
+		return err
+	}
+
+	err = db.DeleteSubject(config_obj, user_path_manager.Path())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func SetUserPermissions(config_obj *config_proto.Config, username string, permissions *acl_proto.ApiClientACL) error {
+	err := acls.SetPolicy(config_obj, username, permissions)
+	if err != nil {
+		return err
+	}
+	return nil
 }

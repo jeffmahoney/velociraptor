@@ -33,6 +33,23 @@ message VelociraptorUser {
     ApiClientACL Permissions = 9;
 }
 
+message CreateUserRequest {
+    string name = 1;
+    string password = 2;
+    string email = 3;
+    bool verified_email = 4;
+
+    bool read_only = 5;
+
+    bool locked = 6;
+
+    ApiClientACL Permissions = 7;
+}
+
+message UserRequest {
+    string name = 1;
+}
+
 
 // Next field: 4
 message GUISettings {
