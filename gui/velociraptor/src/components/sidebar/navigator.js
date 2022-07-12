@@ -118,6 +118,15 @@ class VeloNavigator extends Component {
                         </ul>
                       </NavLink>
 
+                      <NavLink to="/users">
+                        <ul className="nav nav-pills navigator">
+                          <li className="nav-link" state="users" >
+                            <i className="navicon"><FontAwesomeIcon icon="user"/></i>
+                            Users
+                          </li>
+                        </ul>
+                      </NavLink>
+
                       { disabled ?
                         <>
                           <ul className="nav nav-pills navigator">
