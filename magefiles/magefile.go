@@ -130,7 +130,6 @@ func (self *Builder) Env() map[string]string {
 	if self.cc != "" {
 		env["CC"] = self.cc
 	}
-	fmt.Printf("Build Environment: %v\n", json.MustMarshalString(env))
 	return env
 }
 
@@ -145,6 +144,24 @@ func (self Builder) Run() error {
 	}
 
 	tags := base_tags + self.extra_tags
+	env := self.Env()
+
+	bpf := NewBPFBuildEnv()
+	buildBpf, err := bpf.Build()
+	if buildBpf {
+		tags += bpf.Tags() + " "
+		for k, v := range bpf.Env() {
+			_, ok := env[k]
+			if ok {
+				env[k] += " " + v
+			} else {
+				env[k] = v
+			}
+		}
+	} else if err != nil {
+		return err
+	}
+
 	args := []string{
 		"build",
 		"-o", filepath.Join("output", self.Name()),
@@ -154,7 +171,9 @@ func (self Builder) Run() error {
 	args = append(args, self.extra_flags...)
 	args = append(args, "./bin/")
 
-	return sh.RunWith(self.Env(), mg.GoCmd(), args...)
+	fmt.Printf("Build Environment: %v\n", json.MustMarshalString(env))
+
+	return sh.RunWith(env, mg.GoCmd(), args...)
 }
 
 func Auto() error {
@@ -394,6 +413,8 @@ func DarwinBase() error {
 }
 
 func Clean() error {
+	bpf := NewBPFBuildEnv()
+	bpf.Clean()
 	for _, target := range assets {
 		err := sh.Rm(target)
 		if err != nil {
