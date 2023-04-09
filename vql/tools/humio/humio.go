@@ -495,7 +495,7 @@ func (self *HumioQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 		return nil
 	}
 
-	clock := utils.RealClock{}
+	clock := utils.GetTime()
 
 	payloads := []*HumioPayload{}
 	for _, row := range(rows) {
