@@ -277,6 +277,24 @@ func (self *HumioQueueTestSuite) TestSetHttpTransportValid() {
 	require.NotNil(self.T(), self.queue.httpClient.Transport)
 }
 
+func (self *HumioQueueTestSuite) TestMaxRetriesZero() {
+	err := self.queue.SetMaxRetries(0)
+	require.NoError(self.T(), err)
+	require.Equal(self.T(), self.queue.maxRetries, 0)
+}
+
+func (self *HumioQueueTestSuite) TestMaxRetriesNegative() {
+	err := self.queue.SetMaxRetries(-100)
+	require.NoError(self.T(), err)
+	require.Equal(self.T(), self.queue.maxRetries, -100)
+}
+
+func (self *HumioQueueTestSuite) TestMaxRetriesPositive() {
+	err := self.queue.SetMaxRetries(100)
+	require.NoError(self.T(), err)
+	require.Equal(self.T(), self.queue.maxRetries, 100)
+}
+
 func (self *HumioQueueTestSuite) TestSetTaggedFieldsValid() {
 	args := []string{"x=y", "y=z", "z"}
 	expected := map[string]string{

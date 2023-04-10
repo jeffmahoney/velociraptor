@@ -21,6 +21,7 @@ type humioPluginArgs struct {
 	IngestToken	   string   `vfilter:"required,field=ingest_token,doc=Ingest token for API"`
 	Threads            int      `vfilter:"optional,field=threads,doc=How many threads to use to post batched events."`
 	HttpTimeoutSec	   int	    `vfilter:"optional,field=http_timeout,doc=Timeout for http requests (default: 10s)"`
+	MaxRetries	   int      `vfilter:"optional,field=max_retries,doc=Maximum number of retries before failing an operation. A value < 0 means retry forever. (default: 7200)"`
 	RootCerts          string   `vfilter:"optional,field=root_ca,doc=As a better alternative to skip_verify, allows root ca certs to be added here."`
 	SkipVerify	   bool	    `vfilter:"optional,field=skip_verify,doc=Skip verification of server certificates (default: false)"`
 	BatchingTimeoutMs  int      `vfilter:"optional,field=batching_timeout_ms,doc=Timeout between posts (default: 3000ms)"`
@@ -119,6 +120,13 @@ func applyArgs(args *humioPluginArgs, queue *HumioQueue) error {
 		}
 	}
 
+	if args.MaxRetries != defaultMaxRetries {
+		err = queue.SetMaxRetries(args.MaxRetries)
+		if err != nil {
+			return fmt.Errorf("`max_retries': %s", err)
+		}
+	}
+
 	err = queue.SetTaggedFields(args.TagFields)
 	if err != nil {
 		return fmt.Errorf("`tag_fields': %w", err)
@@ -145,7 +153,9 @@ func (self humioPlugin) Call(ctx context.Context,
 			return
 		}
 
-		arg := humioPluginArgs{}
+		arg := humioPluginArgs{
+			MaxRetries: defaultMaxRetries,
+		}
 		err = arg_parser.ExtractArgsWithContext(ctx, scope, args, &arg)
 		if err != nil {
 			scope.Log("humio: %v", err)
