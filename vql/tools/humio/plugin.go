@@ -163,7 +163,11 @@ func (self humioPlugin) Call(ctx context.Context,
 
 		queue := NewHumioQueue(config_obj)
 
-		applyArgs(&arg, queue)
+		err = applyArgs(&arg, queue)
+		if err != nil {
+			scope.Log("humio: %v", err)
+			return
+		}
 
 		err = queue.Open(scope, arg.ApiBaseUrl, arg.IngestToken)
 		if err != nil {
