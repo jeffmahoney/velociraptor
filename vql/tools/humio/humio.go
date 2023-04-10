@@ -336,6 +336,7 @@ func (self *HumioQueue) Open(scope vfilter.Scope, baseUrl string, authToken stri
 	self.listener, err = directory.NewListener(self.config, self.workerCtx,
 						   options.OwnerName, options)
 	if err != nil {
+		self.workerGrp.Wait()
 		return err
 	}
 
