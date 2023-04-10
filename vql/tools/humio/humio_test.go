@@ -289,15 +289,19 @@ func (self *HumioQueueTestSuite) TestSetTaggedFieldsValid() {
 	require.EqualValues(self.T(), self.queue.tagMap, expected)
 }
 
-func (self *HumioQueueTestSuite) TestSetTaggedFieldsEmptyTagName() {
-	args := []string{"=y", "y=z", "z"}
-	err := self.queue.SetTaggedFields(args)
-	require.NotNil(self.T(), err)
-	require.ErrorAs(self.T(), err, &errInvalidArgument{})
-}
-
 func (self *HumioQueueTestSuite) TestSetTaggedFieldsMultipleEquals() {
 	args := []string{"x=y", "y=z=z", }
+	expected := map[string]string{
+		"x" : "y",
+		"y" : "z=z",
+	}
+	err := self.queue.SetTaggedFields(args)
+	require.NoError(self.T(), err)
+	require.EqualValues(self.T(), self.queue.tagMap, expected)
+}
+
+func (self *HumioQueueTestSuite) TestSetTaggedFieldsEmptyTagName() {
+	args := []string{"=y", "y=z", "z"}
 	err := self.queue.SetTaggedFields(args)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})

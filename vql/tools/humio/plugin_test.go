@@ -230,10 +230,9 @@ func (self *HumioPluginTestSuite) TestApplyTagMapEmptyTagName() {
 func (self *HumioPluginTestSuite) TestApplyTagMapMultipleEquals() {
 	self.args.TagFields = []string{"x=y", "y=z=z", }
 	err := applyArgs(&self.args, self.queue)
-	require.NotNil(self.T(), err)
-	require.ErrorAs(self.T(), err, &errInvalidArgument{})
+	require.NoError(self.T(), err)
 	self.CheckApply()
-	require.Nil(self.T(), self.queue.tagMap)
+	require.NotNil(self.T(), self.queue.tagMap)
 }
 
 func (self *HumioPluginTestSuite) TestApplyTagMapEmptyTagArg() {

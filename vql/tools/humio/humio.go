@@ -236,37 +236,27 @@ func (self *HumioQueue) SetTaggedFields(tags []string) error {
 		tagMapping = map[string]string{}
 
 		for _, descr := range tags {
-			mapping := strings.Split(descr, "=")
-			tagName := mapping[0]
+			colName, tagName, mapped := strings.Cut(descr, "=")
 
-			if descr == "" {
+			if colName == "" {
 				return errInvalidArgument{
 					Arg: "tags",
-					Err: fmt.Errorf("Empty tag is not valid"),
+					Err: fmt.Errorf("Empty column name is not valid"),
 				}
 			}
 
-			if tagName == "" {
-				return errInvalidArgument{
-					Arg: "tags",
-					Err: fmt.Errorf("Empty tag name is not valid"),
-				}
-			}
-
-			var mappedName string
-
-			if len(mapping) == 1 {
-				mappedName = mapping[0]
-			} else {
-				if len(mapping) > 2 {
+			if mapped {
+				if tagName == "" {
 					return errInvalidArgument{
 						Arg: "tags",
-						Err: fmt.Errorf("Mapping %v contains multiple `=' characters.", descr),
+						Err: fmt.Errorf("Empty tag name is not valid"),
 					}
 				}
-				mappedName = mapping[1]
+			} else {
+				tagName = colName
 			}
-			tagMapping[tagName] = mappedName
+
+			tagMapping[colName] = tagName
 		}
 	}
 	self.tagMap = tagMapping
