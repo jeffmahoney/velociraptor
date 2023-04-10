@@ -10,6 +10,7 @@ import (
 	"github.com/Velocidex/ordereddict"
 	"www.velocidex.com/golang/velociraptor/acls"
 	vql_subsystem "www.velocidex.com/golang/velociraptor/vql"
+	"www.velocidex.com/golang/velociraptor/vql/networking"
 	vfilter "www.velocidex.com/golang/vfilter"
 	"www.velocidex.com/golang/vfilter/arg_parser"
 )
@@ -19,9 +20,11 @@ type humioPluginArgs struct {
 	ApiBaseUrl	   string   `vfilter:"required,field=apibaseurl,doc=Base URL for Ingestion API"`
 	IngestToken	   string   `vfilter:"required,field=ingest_token,doc=Ingest token for API"`
 	Threads            int      `vfilter:"optional,field=threads,doc=How many threads to use to post batched events."`
-	BatchingTimeoutMs  int      `vfilter:"optional,field=batching_timeout_ms,doc=Timeout between posts"`
-	HttpTimeoutSec	   int	    `vfilter:"optional,field=http_timeout,doc=Timeout for http requests"`
-	EventBatchSize	   int	    `vfilter:"optional,field=event_batch_size,doc=Items to batch before post"`
+	HttpTimeoutSec	   int	    `vfilter:"optional,field=http_timeout,doc=Timeout for http requests (default: 10s)"`
+	RootCerts          string   `vfilter:"optional,field=root_ca,doc=As a better alternative to skip_verify, allows root ca certs to be added here."`
+	SkipVerify	   bool	    `vfilter:"optional,field=skip_verify,doc=Skip verification of server certificates (default: false)"`
+	BatchingTimeoutMs  int      `vfilter:"optional,field=batching_timeout_ms,doc=Timeout between posts (default: 3000ms)"`
+	EventBatchSize	   int	    `vfilter:"optional,field=event_batch_size,doc=Items to batch before post (default: 2000)"`
 	TagFields	   []string `vfilter:"optional,field=tag_fields,doc=Name of fields to be used as tags. Fields can be renamed using =<newname>"`
 	Debug		   bool     `vfilter:"optional,field=debug,doc=Enable verbose logging."`
 }
@@ -164,6 +167,27 @@ func (self humioPlugin) Call(ctx context.Context,
 		queue := NewHumioQueue(config_obj)
 
 		err = applyArgs(&arg, queue)
+		if err != nil {
+			scope.Log("humio: %v", err)
+			return
+		}
+
+		transport, err := networking.GetHttpTransport(config_obj.Client, arg.RootCerts)
+		if err != nil {
+			scope.Log("humio: %v", err)
+			return
+		}
+
+		if arg.SkipVerify {
+			err = networking.EnableSkipVerify(transport.TLSClientConfig,
+							  config_obj.Client)
+			if err != nil {
+				scope.Log("humio: %v", err)
+				return
+			}
+		}
+
+		err = queue.SetHttpTransport(transport)
 		if err != nil {
 			scope.Log("humio: %v", err)
 			return

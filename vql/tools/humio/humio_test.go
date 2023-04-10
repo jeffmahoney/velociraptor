@@ -245,6 +245,38 @@ func (self *HumioQueueTestSuite) TestSetHttpClientTimeoutDurationNegative() {
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
+func (self *HumioQueueTestSuite) TestSetHttpTransportNil() {
+
+	self.queue.SetHttpTransport(nil)
+
+	// Special case: We want to do the processing ourselves
+	self.queue.nWorkers = 0
+
+	server := self.startMockServer()
+	defer server.Close()
+
+	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	require.NoError(self.T(), err)
+	require.NotNil(self.T(), self.queue.httpClient.Transport)
+}
+
+func (self *HumioQueueTestSuite) TestSetHttpTransportValid() {
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	self.queue.SetHttpTransport(transport)
+
+	// Special case: We want to do the processing ourselves
+	self.queue.nWorkers = 0
+
+	server := self.startMockServer()
+	defer server.Close()
+
+	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	require.NoError(self.T(), err)
+	require.NotNil(self.T(), self.queue.httpClient.Transport)
+}
+
 func (self *HumioQueueTestSuite) TestSetTaggedFieldsValid() {
 	args := []string{"x=y", "y=z", "z"}
 	expected := map[string]string{

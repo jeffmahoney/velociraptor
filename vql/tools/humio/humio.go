@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"math/rand"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 	"www.velocidex.com/golang/velociraptor/utils"
 	vql_subsystem "www.velocidex.com/golang/velociraptor/vql"
 	"www.velocidex.com/golang/velociraptor/vql/functions"
+	"www.velocidex.com/golang/velociraptor/vql/networking"
 	vfilter "www.velocidex.com/golang/vfilter"
 )
 
@@ -35,14 +35,10 @@ var (
 	defaultNWorkers = 1
 	defaultMaxRetries = 7200 // ~2h more or less
 
-	gHttpTransportLock sync.Mutex
-	gHttpTransport *http.Transport
-
 	gMaxPoll = 60
 	gMaxPollDev = 30
 	gStatsLogPeriod = time.Duration(30) * time.Second
 	gNextId int32 = 0
-	gHttpClientTimeout = 10
 
 	apiEndpoint = "/v1/ingest/humio-structured"
 )
@@ -94,6 +90,7 @@ type HumioQueue struct {
 	workerCtx		  context.Context
 
 	httpClient                *http.Client
+	httpTransport             *http.Transport
 	// (bool) whether the queue is open
 	queueOpened		  int32
 
@@ -143,22 +140,6 @@ func (self *HumioPayload) String() string {
 	}
 
 	return string(data)
-}
-
-// This allows connection pooling across invocations
-func getHttpTransport() *http.Transport {
-	gHttpTransportLock.Lock()
-	defer gHttpTransportLock.Unlock()
-
-	if gHttpTransport == nil {
-		t := http.DefaultTransport.(*http.Transport).Clone()
-		t.MaxIdleConns = 100
-		t.MaxConnsPerHost = 100
-		t.MaxIdleConnsPerHost = 100
-		gHttpTransport = t
-	}
-
-	return gHttpTransport
 }
 
 func NewHumioQueue(config_obj *config_proto.Config) *HumioQueue {
@@ -293,6 +274,15 @@ func (self *HumioQueue) SetTaggedFields(tags []string) error {
 	return nil
 }
 
+func (self *HumioQueue) SetHttpTransport(transport *http.Transport) error {
+	if self.Opened() {
+		return errQueueOpened
+	}
+
+	self.httpTransport = transport
+	return nil
+}
+
 func (self *HumioQueue) Open(scope vfilter.Scope, baseUrl string, authToken string) error {
 	self.endpointUrl = baseUrl + apiEndpoint
 	self.authToken = authToken
@@ -319,11 +309,19 @@ func (self *HumioQueue) Open(scope vfilter.Scope, baseUrl string, authToken stri
 		}
 	}
 
+	transport := self.httpTransport
+	if transport == nil {
+		transport, err = networking.GetHttpTransport(self.config.Client, "")
+		if err != nil {
+			return err
+		}
+	}
+
 	// We want to do our own cleanup, which has a pipeline we want to flush if we can
 	self.workerGrp, self.workerCtx = errgroup.WithContext(context.Background())
 
-	self.httpClient = &http.Client{Timeout:   self.httpClientTimeoutDuration,
-				       Transport: getHttpTransport(), }
+	self.httpClient = &http.Client{Timeout: self.httpClientTimeoutDuration,
+				       Transport: transport}
 
 	self.id = int(atomic.AddInt32(&gNextId, 1))
 	self.logPrefix = fmt.Sprintf("humio/%v: ", self.id)
