@@ -1,4 +1,4 @@
-package humio
+package logscale
 
 import (
 	"bytes"
@@ -81,7 +81,7 @@ func (err errMaxRetriesExceeded) Unwrap() error {
 
 var errQueueOpened = errors.New("Cannot modify parameters of open queue")
 
-type HumioQueue struct {
+type LogScaleQueue struct {
 	scope                  	  vfilter.Scope
 	config                 	  *config_proto.Config
 
@@ -122,28 +122,28 @@ type HumioQueue struct {
 	totalRetries		  int32
 }
 
-type HumioEvent struct {
+type LogScaleEvent struct {
 	Timestamp time.Time          `json:"timestamp"`
 	Attributes *ordereddict.Dict `json:"attributes"`
 	Timezone string              `json:"timezone,omitempty"`
 }
 
-type HumioPayload struct {
-	Events []HumioEvent          `json:"events"`
+type LogScalePayload struct {
+	Events []LogScaleEvent          `json:"events"`
 	Tags map[string]interface{}  `json:"tags,omitempty"`
 }
 
-func (self *HumioPayload) String() string {
+func (self *LogScalePayload) String() string {
 	data, err := json.Marshal(self)
 	if err != nil {
-		return fmt.Sprintf("HumioPayload{unprintable, err=%s}", err)
+		return fmt.Sprintf("LogScalePayload{unprintable, err=%s}", err)
 	}
 
 	return string(data)
 }
 
-func NewHumioQueue(config_obj *config_proto.Config) *HumioQueue {
-	return &HumioQueue{
+func NewLogScaleQueue(config_obj *config_proto.Config) *LogScaleQueue {
+	return &LogScaleQueue{
 		config: config_obj,
 		nWorkers: defaultNWorkers,
 		batchingTimeoutDuration: defaultBatchingTimeoutDuration,
@@ -153,11 +153,11 @@ func NewHumioQueue(config_obj *config_proto.Config) *HumioQueue {
 	}
 }
 
-func (self *HumioQueue) WorkerCount() int {
+func (self *LogScaleQueue) WorkerCount() int {
 	return self.nWorkers
 }
 
-func (self *HumioQueue) SetWorkerCount(count int) error {
+func (self *LogScaleQueue) SetWorkerCount(count int) error {
 	if self.Opened() {
 		return errQueueOpened
 	}
@@ -172,7 +172,7 @@ func (self *HumioQueue) SetWorkerCount(count int) error {
 	return nil
 }
 
-func (self *HumioQueue) SetBatchingTimeoutDuration(timeout time.Duration) error {
+func (self *LogScaleQueue) SetBatchingTimeoutDuration(timeout time.Duration) error {
 	if self.Opened() {
 		return errQueueOpened
 	}
@@ -187,7 +187,7 @@ func (self *HumioQueue) SetBatchingTimeoutDuration(timeout time.Duration) error 
 	return nil
 }
 
-func (self *HumioQueue) SetEventBatchSize(size int) error {
+func (self *LogScaleQueue) SetEventBatchSize(size int) error {
 	if self.Opened() {
 		return errQueueOpened
 	}
@@ -202,7 +202,7 @@ func (self *HumioQueue) SetEventBatchSize(size int) error {
 	return nil
 }
 
-func (self *HumioQueue) SetHttpClientTimeoutDuration(timeout time.Duration) error {
+func (self *LogScaleQueue) SetHttpClientTimeoutDuration(timeout time.Duration) error {
 	if self.Opened() {
 		return errQueueOpened
 	}
@@ -217,7 +217,7 @@ func (self *HumioQueue) SetHttpClientTimeoutDuration(timeout time.Duration) erro
 	return nil
 }
 
-func (self *HumioQueue) SetMaxRetries(max int) error {
+func (self *LogScaleQueue) SetMaxRetries(max int) error {
 	if self.Opened() {
 		return errQueueOpened
 	}
@@ -226,7 +226,7 @@ func (self *HumioQueue) SetMaxRetries(max int) error {
 	return nil
 }
 
-func (self *HumioQueue) SetTaggedFields(tags []string) error {
+func (self *LogScaleQueue) SetTaggedFields(tags []string) error {
 	if self.Opened() {
 		return errQueueOpened
 	}
@@ -264,7 +264,7 @@ func (self *HumioQueue) SetTaggedFields(tags []string) error {
 	return nil
 }
 
-func (self *HumioQueue) SetHttpTransport(transport *http.Transport) error {
+func (self *LogScaleQueue) SetHttpTransport(transport *http.Transport) error {
 	if self.Opened() {
 		return errQueueOpened
 	}
@@ -273,7 +273,7 @@ func (self *HumioQueue) SetHttpTransport(transport *http.Transport) error {
 	return nil
 }
 
-func (self *HumioQueue) Open(scope vfilter.Scope, baseUrl string, authToken string) error {
+func (self *LogScaleQueue) Open(scope vfilter.Scope, baseUrl string, authToken string) error {
 	self.endpointUrl = baseUrl + apiEndpoint
 	self.authToken = authToken
 
@@ -314,12 +314,12 @@ func (self *HumioQueue) Open(scope vfilter.Scope, baseUrl string, authToken stri
 				       Transport: transport}
 
 	self.id = int(atomic.AddInt32(&gNextId, 1))
-	self.logPrefix = fmt.Sprintf("humio/%v: ", self.id)
+	self.logPrefix = fmt.Sprintf("logscale/%v: ", self.id)
 
 	options := api.QueueOptions{
 		DisableFileBuffering: false,
 		FileBufferLeaseSize: 100,
-		OwnerName: "humio-plugin",
+		OwnerName: "logscale-plugin",
 	}
 	self.listener, err = directory.NewListener(self.config, self.workerCtx,
 						   options.OwnerName, options)
@@ -338,11 +338,11 @@ func (self *HumioQueue) Open(scope vfilter.Scope, baseUrl string, authToken stri
 	return nil
 }
 
-func (self *HumioQueue) Opened() bool {
+func (self *LogScaleQueue) Opened() bool {
 	return atomic.LoadInt32(&self.queueOpened) > 0
 }
 
-func (self *HumioQueue) addDebugCallback(count int, callback func(int)) error {
+func (self *LogScaleQueue) addDebugCallback(count int, callback func(int)) error {
 	if self.Opened() {
 		return errQueueOpened
 	}
@@ -364,8 +364,8 @@ func (self *HumioQueue) addDebugCallback(count int, callback func(int)) error {
 
 // Provide the hostname for the client host if it's a client query
 // since an external system will not have a way to map it to a hostname.
-func (self *HumioQueue) addClientInfo(ctx context.Context, row *ordereddict.Dict,
-				      payload *HumioPayload) {
+func (self *LogScaleQueue) addClientInfo(ctx context.Context, row *ordereddict.Dict,
+				      payload *LogScalePayload) {
 	client_id, ok := row.GetString("ClientId")
 	if ok {
 		payload.Tags["ClientId"] = client_id
@@ -377,7 +377,7 @@ func (self *HumioQueue) addClientInfo(ctx context.Context, row *ordereddict.Dict
 	}
 }
 
-func (self *HumioQueue) addMappedTags(row *ordereddict.Dict, payload *HumioPayload) {
+func (self *LogScaleQueue) addMappedTags(row *ordereddict.Dict, payload *LogScalePayload) {
 	for name, mappedName := range self.tagMap {
 		value, ok := row.Get(name)
 
@@ -387,8 +387,8 @@ func (self *HumioQueue) addMappedTags(row *ordereddict.Dict, payload *HumioPaylo
 	}
 }
 
-func (self *HumioQueue) addTimestamp(scope vfilter.Scope, row *ordereddict.Dict,
-				     payload *HumioPayload) {
+func (self *LogScaleQueue) addTimestamp(scope vfilter.Scope, row *ordereddict.Dict,
+				     payload *LogScalePayload) {
 	timestamp, ok := row.Get("Time")
 	if !ok {
 		timestamp, ok = row.Get("timestamp")
@@ -407,10 +407,10 @@ func (self *HumioQueue) addTimestamp(scope vfilter.Scope, row *ordereddict.Dict,
 	payload.Events[0].Timestamp = ts
 }
 
-func NewHumioPayload(row *ordereddict.Dict) *HumioPayload {
-	return  &HumioPayload{
-		Events: []HumioEvent {
-			HumioEvent{
+func NewLogScalePayload(row *ordereddict.Dict) *LogScalePayload {
+	return  &LogScalePayload{
+		Events: []LogScaleEvent {
+			LogScaleEvent{
 				Attributes: row,
 			},
 		},
@@ -418,9 +418,9 @@ func NewHumioPayload(row *ordereddict.Dict) *HumioPayload {
 	}
 }
 
-func (self *HumioQueue) rowToPayload(ctx context.Context, scope vfilter.Scope,
-				     row *ordereddict.Dict) *HumioPayload {
-	payload := NewHumioPayload(row)
+func (self *LogScaleQueue) rowToPayload(ctx context.Context, scope vfilter.Scope,
+				     row *ordereddict.Dict) *LogScalePayload {
+	payload := NewLogScalePayload(row)
 
 	self.addClientInfo(ctx, row, payload)
 	self.addMappedTags(row, payload)
@@ -429,7 +429,7 @@ func (self *HumioQueue) rowToPayload(ctx context.Context, scope vfilter.Scope,
 	return payload
 }
 
-func (self *HumioQueue) postBytes(ctx context.Context, scope vfilter.Scope,
+func (self *LogScaleQueue) postBytes(ctx context.Context, scope vfilter.Scope,
 				  data []byte, count int) (error, bool) {
 	req, err := http.NewRequestWithContext(ctx, "POST", self.endpointUrl,
 					       bytes.NewReader(data))
@@ -472,7 +472,7 @@ func (self *HumioQueue) postBytes(ctx context.Context, scope vfilter.Scope,
 
 var errQueueShutdown = errors.New("Queue shutdown while server was not accepting events.")
 
-func (self *HumioQueue) postEvents(ctx context.Context, scope vfilter.Scope,
+func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 				   rows []*ordereddict.Dict) error {
 	nRows := len(rows)
 	opts := vql_subsystem.EncOptsFromScope(scope)
@@ -486,7 +486,7 @@ func (self *HumioQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 
 	clock := utils.GetTime()
 
-	payloads := []*HumioPayload{}
+	payloads := []*LogScalePayload{}
 	for _, row := range(rows) {
 		payloads = append(payloads, self.rowToPayload(ctx, scope, row))
 	}
@@ -552,7 +552,7 @@ func (self *HumioQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 	}
 }
 
-func (self *HumioQueue) debugEvents(count int) {
+func (self *LogScaleQueue) debugEvents(count int) {
 
 	events, ok := self.debugEventsMap[count]
 	if ok  {
@@ -562,7 +562,7 @@ func (self *HumioQueue) debugEvents(count int) {
 	}
 }
 
-func (self *HumioQueue) processEvents(ctx context.Context, scope vfilter.Scope) error {
+func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scope) error {
 	postData := []*ordereddict.Dict{}
 	eventCount := 0
 	dropEvents := false
@@ -635,12 +635,12 @@ func (self *HumioQueue) processEvents(ctx context.Context, scope vfilter.Scope) 
 	}
 }
 
-func (self *HumioQueue) QueueEvent(row *ordereddict.Dict) {
+func (self *LogScaleQueue) QueueEvent(row *ordereddict.Dict) {
 	self.listener.Send(row)
 	atomic.AddInt32(&self.currentQueueDepth, 1)
 }
 
-func (self *HumioQueue) Close(scope vfilter.Scope) {
+func (self *LogScaleQueue) Close(scope vfilter.Scope) {
 	if !atomic.CompareAndSwapInt32(&self.queueOpened, 1, 0) {
 		// Already shut down
 		return
@@ -666,25 +666,25 @@ func (self *HumioQueue) Close(scope vfilter.Scope) {
 	}
 }
 
-func (self *HumioQueue) Log(scope vfilter.Scope, fmt string, args ...any) {
+func (self *LogScaleQueue) Log(scope vfilter.Scope, fmt string, args ...any) {
 	scope.Log(self.logPrefix + fmt, args...)
 }
 
-func (self *HumioQueue) Debug(scope vfilter.Scope, fmt string, args ...any) {
+func (self *LogScaleQueue) Debug(scope vfilter.Scope, fmt string, args ...any) {
 	if self.debug {
 		scope.Log(self.logPrefix + fmt, args...)
 	}
 }
 
-func (self *HumioQueue) PostBacklogStats(scope vfilter.Scope) {
+func (self *LogScaleQueue) PostBacklogStats(scope vfilter.Scope) {
 	currentQueueDepth := atomic.LoadInt32(&self.currentQueueDepth)
 	queuedBytes := self.listener.FileBufferSize()
 	self.Log(scope, "Backlog size: %v events %v bytes", currentQueueDepth, queuedBytes)
 }
 
-type humioPlugin struct{}
+type logscalePlugin struct{}
 
-func (self *HumioQueue) EnableDebugging(enabled bool) {
+func (self *LogScaleQueue) EnableDebugging(enabled bool) {
 	self.debug = enabled
 }
 

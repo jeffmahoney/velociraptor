@@ -1,14 +1,14 @@
-name: Humio.Flows.Upload
+name: LogScale.Flows.Upload
 description: |
   This server side event monitoring artifact waits for new artifacts
   to be collected from endpoints and automatically posts those to a
-  Humio ingestion endpoint.
+  LogScale (formerly Humio) ingestion endpoint.
 
 type: SERVER_EVENT
 
 parameters:
   - name: ingestApiBase
-    description: API Base Url for Humio server
+    description: API Base Url for LogScale server
     type: string
     default: https://cloud.community.humio.com/api
   - name: ingestToken
@@ -64,7 +64,7 @@ sources:
                  })
           })
 
-      SELECT * FROM humio_upload(
+      SELECT * FROM logscale_upload(
           query=documents,
           apibaseurl=ingestApiBase,
           ingest_token=ingestToken,

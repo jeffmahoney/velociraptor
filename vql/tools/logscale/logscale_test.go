@@ -1,4 +1,4 @@
-package humio
+package logscale
 
 import (
 	"context"
@@ -49,10 +49,10 @@ var (
 	testHostname = "testhost12"
 )
 
-type HumioQueueTestSuite struct {
+type LogScaleQueueTestSuite struct {
 	test_utils.TestSuite
 
-	queue		*HumioQueue
+	queue		*LogScaleQueue
 	scope		vfilter.Scope
 	ctx		context.Context
 
@@ -68,11 +68,11 @@ func formatTimestamp(ts time.Time) string {
 	return ts.UTC().Format(time.RFC3339Nano)
 }
 
-func (self *HumioQueueTestSuite) SetupTest() {
+func (self *LogScaleQueueTestSuite) SetupTest() {
 	self.ConfigObj = self.LoadConfig()
 	self.TestSuite.SetupTest()
 
-	self.queue = NewHumioQueue(self.ConfigObj)
+	self.queue = NewLogScaleQueue(self.ConfigObj)
 	self.queue.SetHttpClientTimeoutDuration(time.Duration(1) * time.Second)
 	self.queue.SetMaxRetries(1)
 	self.scope = self.getScope()
@@ -81,7 +81,7 @@ func (self *HumioQueueTestSuite) SetupTest() {
 	self.populateClients()
 }
 
-func (self *HumioQueueTestSuite) populateClients() {
+func (self *LogScaleQueueTestSuite) populateClients() {
         self.clients = nil
         db, err := datastore.GetDB(self.ConfigObj)
         require.NoError(self.T(), err)
@@ -123,7 +123,7 @@ func (self *HumioQueueTestSuite) populateClients() {
         })
 }
 
-func (self *HumioQueueTestSuite) getScope() vfilter.Scope {
+func (self *LogScaleQueueTestSuite) getScope() vfilter.Scope {
         manager, err := services.GetRepositoryManager(self.ConfigObj)
 	require.NoError(self.T(), err)
 
@@ -145,107 +145,107 @@ func generateRow() *ordereddict.Dict {
 		Set("TestValue2", "value2").
 		Set("TestValue3", "value3").
 		Set("TestValue4", "value4").
-		Set("Artifact", "Humio.Client.Events").
+		Set("Artifact", "LogScale.Client.Events").
 		Set("ClientId", testClientId)
 }
 
-func (self *HumioQueueTestSuite) TearDownTest() {
+func (self *LogScaleQueueTestSuite) TearDownTest() {
 	if self.queue != nil {
 		self.queue.Close(self.scope)
 	}
 }
 
-func (self *HumioQueueTestSuite) TestEmptyUrl() {
+func (self *LogScaleQueueTestSuite) TestEmptyUrl() {
 	err := self.queue.Open(self.scope, "", validAuthToken)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestInvalidUrl() {
+func (self *LogScaleQueueTestSuite) TestInvalidUrl() {
 	err := self.queue.Open(self.scope, "invalid-url", validAuthToken)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestValidUrl() {
+func (self *LogScaleQueueTestSuite) TestValidUrl() {
 	err := self.queue.Open(self.scope, validUrl, validAuthToken)
 	require.NoError(self.T(), err)
 }
 
-func (self *HumioQueueTestSuite) TestEmptyAuthToken() {
+func (self *LogScaleQueueTestSuite) TestEmptyAuthToken() {
 	err := self.queue.Open(self.scope, validUrl, "")
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestValidAuthToken() {
+func (self *LogScaleQueueTestSuite) TestValidAuthToken() {
 	err := self.queue.Open(self.scope, validUrl, validAuthToken)
 	require.NoError(self.T(), err)
 }
 
-func (self *HumioQueueTestSuite) TestInvalidThreads() {
+func (self *LogScaleQueueTestSuite) TestInvalidThreads() {
 	err := self.queue.SetWorkerCount(-1)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestValidThreads() {
+func (self *LogScaleQueueTestSuite) TestValidThreads() {
 	err := self.queue.SetWorkerCount(validWorkerCount)
 	require.NoError(self.T(), err)
 }
 
-func (self *HumioQueueTestSuite) TestSetEventBatchSizeValid() {
+func (self *LogScaleQueueTestSuite) TestSetEventBatchSizeValid() {
 	err := self.queue.SetEventBatchSize(10)
 	require.NoError(self.T(), err)
 }
 
-func (self *HumioQueueTestSuite) TestSetEventBatchSizeZero() {
+func (self *LogScaleQueueTestSuite) TestSetEventBatchSizeZero() {
 	err := self.queue.SetEventBatchSize(0)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestSetEventBatchSizeNegative() {
+func (self *LogScaleQueueTestSuite) TestSetEventBatchSizeNegative() {
 	err := self.queue.SetEventBatchSize(-10)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestSetBatchingTimeoutDurationValid() {
+func (self *LogScaleQueueTestSuite) TestSetBatchingTimeoutDurationValid() {
 	err := self.queue.SetBatchingTimeoutDuration(10 * time.Second)
 	require.NoError(self.T(), err)
 }
 
-func (self *HumioQueueTestSuite) TestSetBatchingTimeoutDurationZero() {
+func (self *LogScaleQueueTestSuite) TestSetBatchingTimeoutDurationZero() {
 	err := self.queue.SetBatchingTimeoutDuration(0 * time.Second)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestSetBatchingTimeoutDurationNegative() {
+func (self *LogScaleQueueTestSuite) TestSetBatchingTimeoutDurationNegative() {
 	err := self.queue.SetBatchingTimeoutDuration(-10 * time.Second)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestSetHttpClientTimeoutDurationValid() {
+func (self *LogScaleQueueTestSuite) TestSetHttpClientTimeoutDurationValid() {
 	err := self.queue.SetHttpClientTimeoutDuration(10 * time.Second)
 	require.NoError(self.T(), err)
 }
 
-func (self *HumioQueueTestSuite) TestSetHttpClientTimeoutDurationZero() {
+func (self *LogScaleQueueTestSuite) TestSetHttpClientTimeoutDurationZero() {
 	err := self.queue.SetHttpClientTimeoutDuration(0 * time.Second)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestSetHttpClientTimeoutDurationNegative() {
+func (self *LogScaleQueueTestSuite) TestSetHttpClientTimeoutDurationNegative() {
 	err := self.queue.SetHttpClientTimeoutDuration(-10 * time.Second)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestSetHttpTransportNil() {
+func (self *LogScaleQueueTestSuite) TestSetHttpTransportNil() {
 
 	self.queue.SetHttpTransport(nil)
 
@@ -260,7 +260,7 @@ func (self *HumioQueueTestSuite) TestSetHttpTransportNil() {
 	require.NotNil(self.T(), self.queue.httpClient.Transport)
 }
 
-func (self *HumioQueueTestSuite) TestSetHttpTransportValid() {
+func (self *LogScaleQueueTestSuite) TestSetHttpTransportValid() {
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
@@ -277,25 +277,25 @@ func (self *HumioQueueTestSuite) TestSetHttpTransportValid() {
 	require.NotNil(self.T(), self.queue.httpClient.Transport)
 }
 
-func (self *HumioQueueTestSuite) TestMaxRetriesZero() {
+func (self *LogScaleQueueTestSuite) TestMaxRetriesZero() {
 	err := self.queue.SetMaxRetries(0)
 	require.NoError(self.T(), err)
 	require.Equal(self.T(), self.queue.maxRetries, 0)
 }
 
-func (self *HumioQueueTestSuite) TestMaxRetriesNegative() {
+func (self *LogScaleQueueTestSuite) TestMaxRetriesNegative() {
 	err := self.queue.SetMaxRetries(-100)
 	require.NoError(self.T(), err)
 	require.Equal(self.T(), self.queue.maxRetries, -100)
 }
 
-func (self *HumioQueueTestSuite) TestMaxRetriesPositive() {
+func (self *LogScaleQueueTestSuite) TestMaxRetriesPositive() {
 	err := self.queue.SetMaxRetries(100)
 	require.NoError(self.T(), err)
 	require.Equal(self.T(), self.queue.maxRetries, 100)
 }
 
-func (self *HumioQueueTestSuite) TestSetTaggedFieldsValid() {
+func (self *LogScaleQueueTestSuite) TestSetTaggedFieldsValid() {
 	args := []string{"x=y", "y=z", "z"}
 	expected := map[string]string{
 		"x" : "y",
@@ -307,7 +307,7 @@ func (self *HumioQueueTestSuite) TestSetTaggedFieldsValid() {
 	require.EqualValues(self.T(), self.queue.tagMap, expected)
 }
 
-func (self *HumioQueueTestSuite) TestSetTaggedFieldsMultipleEquals() {
+func (self *LogScaleQueueTestSuite) TestSetTaggedFieldsMultipleEquals() {
 	args := []string{"x=y", "y=z=z", }
 	expected := map[string]string{
 		"x" : "y",
@@ -318,111 +318,111 @@ func (self *HumioQueueTestSuite) TestSetTaggedFieldsMultipleEquals() {
 	require.EqualValues(self.T(), self.queue.tagMap, expected)
 }
 
-func (self *HumioQueueTestSuite) TestSetTaggedFieldsEmptyTagName() {
+func (self *LogScaleQueueTestSuite) TestSetTaggedFieldsEmptyTagName() {
 	args := []string{"=y", "y=z", "z"}
 	err := self.queue.SetTaggedFields(args)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) TestSetTaggedFieldsEmptyTagArg() {
+func (self *LogScaleQueueTestSuite) TestSetTaggedFieldsEmptyTagArg() {
 	args := []string{}
 	err := self.queue.SetTaggedFields(args)
 	require.NoError(self.T(), err)
 	require.Nil(self.T(), self.queue.tagMap)
 }
 
-func (self *HumioQueueTestSuite) TestSetTaggedFieldsEmptyTagString() {
+func (self *LogScaleQueueTestSuite) TestSetTaggedFieldsEmptyTagString() {
 	args := []string{"",}
 	err := self.queue.SetTaggedFields(args)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
-func (self *HumioQueueTestSuite) checkTimestamp(payload *HumioPayload) {
+func (self *LogScaleQueueTestSuite) checkTimestamp(payload *LogScalePayload) {
 	require.Equal(self.T(), testTimestamp, formatTimestamp(payload.Events[0].Timestamp))
 	require.Equal(self.T(), "", payload.Events[0].Timezone)
 }
 
-func (self *HumioQueueTestSuite) TestTimestamp_TimeString() {
+func (self *LogScaleQueueTestSuite) TestTimestamp_TimeString() {
 	row := ordereddict.NewDict().
 		Set("Time", testTimestampStringTZ).
 		Set("timestamp", testTimestampStringTZ).
 		Set("_ts", testTimestampStringTZ).
 		Set("TestValue", "value")
 
-	payload := NewHumioPayload(row)
+	payload := NewLogScalePayload(row)
 
 	self.queue.addTimestamp(self.scope, row, payload)
 
 	self.checkTimestamp(payload)
 }
 
-func (self *HumioQueueTestSuite) TestTimestamp_timestampString() {
+func (self *LogScaleQueueTestSuite) TestTimestamp_timestampString() {
 	row := ordereddict.NewDict().
 		Set("timestamp", testTimestampStringTZ).
 		Set("_ts", testTimestampStringTZ).
 		Set("TestValue", "value")
 
-	payload := NewHumioPayload(row)
+	payload := NewLogScalePayload(row)
 
 	self.queue.addTimestamp(self.scope, row, payload)
 
 	self.checkTimestamp(payload)
 }
 
-func (self *HumioQueueTestSuite) TestTimestamp__tsString() {
+func (self *LogScaleQueueTestSuite) TestTimestamp__tsString() {
 	row := ordereddict.NewDict().
 		Set("_ts", testTimestampStringTZ).
 		Set("TestValue", "value")
 
-	payload := NewHumioPayload(row)
+	payload := NewLogScalePayload(row)
 
 	self.queue.addTimestamp(self.scope, row, payload)
 
 	self.checkTimestamp(payload)
 }
 
-func (self *HumioQueueTestSuite) TestTimestamp_TimeUNIX() {
+func (self *LogScaleQueueTestSuite) TestTimestamp_TimeUNIX() {
 	row := ordereddict.NewDict().
 		Set("Time", testTimestampUNIX).
 		Set("timestamp", testTimestampUNIX).
 		Set("_ts", testTimestampUNIX).
 		Set("TestValue", "value")
 
-	payload := NewHumioPayload(row)
+	payload := NewLogScalePayload(row)
 
 	self.queue.addTimestamp(self.scope, row, payload)
 
 	self.checkTimestamp(payload)
 }
 
-func (self *HumioQueueTestSuite) TestTimestamp_timestampUNIX() {
+func (self *LogScaleQueueTestSuite) TestTimestamp_timestampUNIX() {
 	row := ordereddict.NewDict().
 		Set("timestamp", testTimestampUNIX).
 		Set("_ts", testTimestampUNIX).
 		Set("TestValue", "value")
 
-	payload := NewHumioPayload(row)
+	payload := NewLogScalePayload(row)
 
 	self.queue.addTimestamp(self.scope, row, payload)
 
 	self.checkTimestamp(payload)
 }
 
-func (self *HumioQueueTestSuite) TestTimestamp__tsUNIX() {
+func (self *LogScaleQueueTestSuite) TestTimestamp__tsUNIX() {
 	row := ordereddict.NewDict().
 		Set("_ts", testTimestampUNIX).
 		Set("TestValue", "value")
 
-	payload := NewHumioPayload(row)
+	payload := NewLogScalePayload(row)
 
 	self.queue.addTimestamp(self.scope, row, payload)
 
 	self.checkTimestamp(payload)
 }
 
-func (self *HumioQueueTestSuite) TestAddMappedTags() {
+func (self *LogScaleQueueTestSuite) TestAddMappedTags() {
 	row := generateRow()
 
 	expected := map[string]string{
@@ -435,7 +435,7 @@ func (self *HumioQueueTestSuite) TestAddMappedTags() {
 		expectedTags = append(expectedTags, k)
 	}
 
-	payload := NewHumioPayload(row)
+	payload := NewLogScalePayload(row)
 
 	self.queue.SetTaggedFields(expectedTags)
 	self.queue.addMappedTags(row, payload)
@@ -451,17 +451,17 @@ func (self *HumioQueueTestSuite) TestAddMappedTags() {
 	}
 }
 
-func (self *HumioQueueTestSuite) TestAddClientInfo() {
+func (self *LogScaleQueueTestSuite) TestAddClientInfo() {
 	row := generateRow()
 
-	payload := NewHumioPayload(row)
+	payload := NewLogScalePayload(row)
 	self.queue.addClientInfo(self.ctx, row, payload)
 
 	require.Contains(self.T(), payload.Tags, "ClientHostname")
 	require.EqualValues(self.T(), payload.Tags["ClientHostname"], testHostname)
 }
 
-func (self *HumioQueueTestSuite) TestRowToPayload() {
+func (self *LogScaleQueueTestSuite) TestRowToPayload() {
 	row := generateRow()
 
 	expectedTags := []string{
@@ -510,7 +510,7 @@ func (self *HumioQueueTestSuite) TestRowToPayload() {
 	self.checkTimestamp(payload)
 }
 
-func (self *HumioQueueTestSuite) handleEndpointRequest(w http.ResponseWriter, r *http.Request) {
+func (self *LogScaleQueueTestSuite) handleEndpointRequest(w http.ResponseWriter, r *http.Request) {
 	auth := r.Header.Get("Authorization")
 	if len(auth) < 8 || strings.ToLower(strings.TrimSpace(auth))[0:7] != "bearer " {
 	        w.WriteHeader(http.StatusUnauthorized)
@@ -527,7 +527,7 @@ func (self *HumioQueueTestSuite) handleEndpointRequest(w http.ResponseWriter, r 
 		return
 	}
 
-	data := []HumioPayload{}
+	data := []LogScalePayload{}
 
 	err = json.Unmarshal(body, &data)
 	if err != nil {
@@ -569,7 +569,7 @@ func handlerTimeout(w http.ResponseWriter, r *http.Request) {
 }
 
 
-func (self *HumioQueueTestSuite) startMockServerWithHandler(handler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
+func (self *LogScaleQueueTestSuite) startMockServerWithHandler(handler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	    switch strings.TrimSpace(r.URL.Path) {
 	    case apiEndpoint:
@@ -580,30 +580,30 @@ func (self *HumioQueueTestSuite) startMockServerWithHandler(handler func(w http.
 	}))
 }
 
-func (self *HumioQueueTestSuite) startMockServer() *httptest.Server {
+func (self *LogScaleQueueTestSuite) startMockServer() *httptest.Server {
 	return self.startMockServerWithHandler(func(w http.ResponseWriter, r *http.Request) {
 		self.handleEndpointRequest(w, r)
 	})
 }
 
-func (self *HumioQueueTestSuite) updateEndpointUrl(server *httptest.Server) {
+func (self *LogScaleQueueTestSuite) updateEndpointUrl(server *httptest.Server) {
 	self.queue.endpointUrl = server.URL + apiEndpoint
 }
 
-func (self *HumioQueueTestSuite) preparePayloads(payloads []*HumioPayload) []byte {
+func (self *LogScaleQueueTestSuite) preparePayloads(payloads []*LogScalePayload) []byte {
 	opts := vql_subsystem.EncOptsFromScope(self.scope)
         data, err := json.MarshalWithOptions(payloads, opts)
 	require.NoError(self.T(), err)
 	return data
 }
 
-func (self *HumioQueueTestSuite) TestPostBytesValid() {
+func (self *LogScaleQueueTestSuite) TestPostBytesValid() {
 	row := generateRow()
 	timestamp, _ := functions.TimeFromAny(self.scope, testTimestampStringTZ)
-	payloads := []*HumioPayload{
-			&HumioPayload{
-				Events: []HumioEvent{
-					HumioEvent{
+	payloads := []*LogScalePayload{
+			&LogScalePayload{
+				Events: []LogScaleEvent{
+					LogScaleEvent{
 						Attributes: row,
 						Timestamp: timestamp,
 					},
@@ -629,8 +629,8 @@ func (self *HumioQueueTestSuite) TestPostBytesValid() {
 }
 
 // Pointless but still valid
-func (self *HumioQueueTestSuite) TestPostBytesEmpty() {
-	payloads := []*HumioPayload{}
+func (self *LogScaleQueueTestSuite) TestPostBytesEmpty() {
+	payloads := []*LogScalePayload{}
 
 	server := self.startMockServer()
 	defer server.Close()
@@ -645,8 +645,8 @@ func (self *HumioQueueTestSuite) TestPostBytesEmpty() {
 	require.False(self.T(), retry)
 }
 
-func (self *HumioQueueTestSuite) TestPostBytesEmptyTimeout() {
-	payloads := []*HumioPayload{}
+func (self *LogScaleQueueTestSuite) TestPostBytesEmptyTimeout() {
+	payloads := []*LogScalePayload{}
 
 	server := self.startMockServerWithHandler(handlerTimeout)
 	defer server.Close()
@@ -663,8 +663,8 @@ func (self *HumioQueueTestSuite) TestPostBytesEmptyTimeout() {
 	require.True(self.T(), retry)
 }
 
-func (self *HumioQueueTestSuite) TestPostBytesEmptyConnRefused() {
-	payloads := []*HumioPayload{}
+func (self *LogScaleQueueTestSuite) TestPostBytesEmptyConnRefused() {
+	payloads := []*LogScalePayload{}
 
 	err := self.queue.Open(self.scope, "http://localhost:1", validAuthToken)
 	require.NoError(self.T(), err)
@@ -678,9 +678,9 @@ func (self *HumioQueueTestSuite) TestPostBytesEmptyConnRefused() {
 	require.True(self.T(), retry)
 }
 
-func (self *HumioQueueTestSuite) TestPostBytesNoEvents() {
-	payloads := []*HumioPayload{
-			&HumioPayload{
+func (self *LogScaleQueueTestSuite) TestPostBytesNoEvents() {
+	payloads := []*LogScalePayload{
+			&LogScalePayload{
 				Tags: map[string]interface{}{
 					"ClientId" : testClientId,
 					"ClientHostname" : testHostname,
@@ -702,7 +702,7 @@ func (self *HumioQueueTestSuite) TestPostBytesNoEvents() {
 	require.False(self.T(), retry)
 }
 
-func (self *HumioQueueTestSuite) TestPostEventsEmpty() {
+func (self *LogScaleQueueTestSuite) TestPostEventsEmpty() {
 	rows := []*ordereddict.Dict{}
 
 	server := self.startMockServer()
@@ -715,7 +715,7 @@ func (self *HumioQueueTestSuite) TestPostEventsEmpty() {
 	require.NoError(self.T(), err)
 }
 
-func (self *HumioQueueTestSuite) TestPostEventsSingle() {
+func (self *LogScaleQueueTestSuite) TestPostEventsSingle() {
 	rows := []*ordereddict.Dict{}
 
 	rows = append(rows, generateRow())
@@ -731,7 +731,7 @@ func (self *HumioQueueTestSuite) TestPostEventsSingle() {
 	require.NoError(self.T(), err)
 }
 
-func (self *HumioQueueTestSuite) TestPostEventsSingleTimeout() {
+func (self *LogScaleQueueTestSuite) TestPostEventsSingleTimeout() {
 	rows := []*ordereddict.Dict{}
 
 	rows = append(rows, generateRow())
@@ -752,7 +752,7 @@ func (self *HumioQueueTestSuite) TestPostEventsSingleTimeout() {
 	require.True(self.T(), netErr.Timeout())
 }
 
-func (self *HumioQueueTestSuite) TestPostEventsSingleConnRefused() {
+func (self *LogScaleQueueTestSuite) TestPostEventsSingleConnRefused() {
 	rows := []*ordereddict.Dict{}
 
 	rows = append(rows, generateRow())
@@ -773,7 +773,7 @@ func (self *HumioQueueTestSuite) TestPostEventsSingleConnRefused() {
 	require.ErrorIs(self.T(), err, syscall.ECONNREFUSED)
 }
 
-func (self *HumioQueueTestSuite) TestPostEventsMultiple() {
+func (self *LogScaleQueueTestSuite) TestPostEventsMultiple() {
 	rows := []*ordereddict.Dict{}
 
 	rows = append(rows, generateRow())
@@ -791,7 +791,7 @@ func (self *HumioQueueTestSuite) TestPostEventsMultiple() {
 	require.NoError(self.T(), err)
 }
 
-func (self *HumioQueueTestSuite) TestPostEventsMultipleTimeout() {
+func (self *LogScaleQueueTestSuite) TestPostEventsMultipleTimeout() {
 	rows := []*ordereddict.Dict{}
 
 	rows = append(rows, generateRow())
@@ -815,7 +815,7 @@ func (self *HumioQueueTestSuite) TestPostEventsMultipleTimeout() {
 	require.True(self.T(), netErr.Timeout())
 }
 
-func (self *HumioQueueTestSuite) TestPostEventsMultipleConnRefused() {
+func (self *LogScaleQueueTestSuite) TestPostEventsMultipleConnRefused() {
 	rows := []*ordereddict.Dict{}
 
 	rows = append(rows, generateRow())
@@ -840,7 +840,7 @@ func (self *HumioQueueTestSuite) TestPostEventsMultipleConnRefused() {
 }
 
 // Test whether events just make it into the queue properly
-func (self *HumioQueueTestSuite) TestQueueEvents_Queued() {
+func (self *LogScaleQueueTestSuite) TestQueueEvents_Queued() {
 	server := self.startMockServer()
 	defer server.Close()
 
@@ -870,7 +870,7 @@ func (self *HumioQueueTestSuite) TestQueueEvents_Queued() {
 }
 
 // Test whether events just make it back out of the queue and post properly
-func (self *HumioQueueTestSuite) TestQueueEventsOpen_Dequeued() {
+func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_Dequeued() {
 	server := self.startMockServer()
 	defer server.Close()
 
@@ -929,7 +929,7 @@ func (self *HumioQueueTestSuite) TestQueueEventsOpen_Dequeued() {
 }
 
 // Test whether events just make it back out of the queue and are handled properly when the post fails
-func (self *HumioQueueTestSuite) TestQueueEventsOpen_DequeuedFailure() {
+func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedFailure() {
 	server := self.startMockServer()
 	defer server.Close()
 
@@ -1001,7 +1001,7 @@ func (self *HumioQueueTestSuite) TestQueueEventsOpen_DequeuedFailure() {
 	cancel()
 }
 
-func (self *HumioQueueTestSuite) TestQueueEventsOpen_DequeuedConnRefused() {
+func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedConnRefused() {
 	server := self.startMockServer()
 	defer server.Close()
 
@@ -1071,7 +1071,7 @@ func (self *HumioQueueTestSuite) TestQueueEventsOpen_DequeuedConnRefused() {
 	cancel()
 }
 
-func (self *HumioQueueTestSuite) TestProcessEvents_Working() {
+func (self *LogScaleQueueTestSuite) TestProcessEvents_Working() {
 	nRows := 100
 
 	server := self.startMockServer()
@@ -1099,7 +1099,7 @@ func (self *HumioQueueTestSuite) TestProcessEvents_Working() {
 	require.Equal(self.T(), nRows, int(atomic.LoadInt32(&self.queue.postedEvents)))
 }
 
-func (self *HumioQueueTestSuite) TestProcessEvents_ShutdownWhileFailing() {
+func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownWhileFailing() {
 	nRows := 100
 
 	server := self.startMockServer()
@@ -1135,7 +1135,7 @@ func (self *HumioQueueTestSuite) TestProcessEvents_ShutdownWhileFailing() {
 	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.totalRetries)))
 }
 
-func (self *HumioQueueTestSuite) TestProcessEvents_ShutdownAfterRecovery() {
+func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownAfterRecovery() {
 	nRows := 100
 
 	server := self.startMockServer()
@@ -1189,7 +1189,7 @@ func (self *HumioQueueTestSuite) TestProcessEvents_ShutdownAfterRecovery() {
 	require.Equal(self.T(), 1, int(atomic.LoadInt32(&self.queue.failedEvents)))
 }
 
-func (self *HumioQueueTestSuite) TestProcessEvents_4xx() {
+func (self *LogScaleQueueTestSuite) TestProcessEvents_4xx() {
 	nRows := 100
 
 	server := self.startMockServer()
@@ -1242,8 +1242,8 @@ func (self *HumioQueueTestSuite) TestProcessEvents_4xx() {
 	require.Equal(self.T(), 5, int(atomic.LoadInt32(&self.queue.failedEvents)))
 }
 
-func TestHumioQueue(t *testing.T) {
+func TestLogScaleQueue(t *testing.T) {
 	gMaxPoll = 1
 	gMaxPollDev = 1
-        suite.Run(t, new(HumioQueueTestSuite))
+        suite.Run(t, new(LogScaleQueueTestSuite))
 }

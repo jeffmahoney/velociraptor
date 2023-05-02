@@ -1,4 +1,4 @@
-package humio
+package logscale
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"www.velocidex.com/golang/vfilter/arg_parser"
 )
 
-type humioPluginArgs struct {
+type logscalePluginArgs struct {
 	Query              vfilter.StoredQuery `vfilter:"required,field=query,doc=Source for rows to upload."`
 	ApiBaseUrl	   string   `vfilter:"required,field=apibaseurl,doc=Base URL for Ingestion API"`
 	IngestToken	   string   `vfilter:"required,field=ingest_token,doc=Ingest token for API"`
@@ -30,7 +30,7 @@ type humioPluginArgs struct {
 	Debug		   bool     `vfilter:"optional,field=debug,doc=Enable verbose logging."`
 }
 
-func (args *humioPluginArgs) validate() error {
+func (args *logscalePluginArgs) validate() error {
 	if args.ApiBaseUrl == "" {
 		return errInvalidArgument{
 			Arg: "apibaseurl",
@@ -88,7 +88,7 @@ func (args *humioPluginArgs) validate() error {
 	return nil
 }
 
-func applyArgs(args *humioPluginArgs, queue *HumioQueue) error {
+func applyArgs(args *logscalePluginArgs, queue *LogScaleQueue) error {
 	var err error
 	if args.Threads > 0 {
 		err = queue.SetWorkerCount(args.Threads)
@@ -139,7 +139,7 @@ func applyArgs(args *humioPluginArgs, queue *HumioQueue) error {
 	return nil
 }
 
-func (self humioPlugin) Call(ctx context.Context,
+func (self logscalePlugin) Call(ctx context.Context,
 	scope vfilter.Scope,
 	args *ordereddict.Dict) <-chan vfilter.Row {
 	outputChan := make(chan vfilter.Row)
@@ -149,42 +149,42 @@ func (self humioPlugin) Call(ctx context.Context,
 
 		err := vql_subsystem.CheckAccess(scope, acls.COLLECT_SERVER)
 		if err != nil {
-			scope.Log("humio: %v", err)
+			scope.Log("logscale: %v", err)
 			return
 		}
 
-		arg := humioPluginArgs{
+		arg := logscalePluginArgs{
 			MaxRetries: defaultMaxRetries,
 		}
 		err = arg_parser.ExtractArgsWithContext(ctx, scope, args, &arg)
 		if err != nil {
-			scope.Log("humio: %v", err)
+			scope.Log("logscale: %v", err)
 			return
 		}
 
 		err = arg.validate()
 		if err != nil {
-			scope.Log("humio: %v", err)
+			scope.Log("logscale: %v", err)
 			return
 		}
 
 		config_obj, ok := vql_subsystem.GetServerConfig(scope)
 		if !ok {
-			scope.Log("humio: could not get config from scope")
+			scope.Log("logscale: could not get config from scope")
 			return
 		}
 
-		queue := NewHumioQueue(config_obj)
+		queue := NewLogScaleQueue(config_obj)
 
 		err = applyArgs(&arg, queue)
 		if err != nil {
-			scope.Log("humio: %v", err)
+			scope.Log("logscale: %v", err)
 			return
 		}
 
 		transport, err := networking.GetHttpTransport(config_obj.Client, arg.RootCerts)
 		if err != nil {
-			scope.Log("humio: %v", err)
+			scope.Log("logscale: %v", err)
 			return
 		}
 
@@ -192,20 +192,20 @@ func (self humioPlugin) Call(ctx context.Context,
 			err = networking.EnableSkipVerify(transport.TLSClientConfig,
 							  config_obj.Client)
 			if err != nil {
-				scope.Log("humio: %v", err)
+				scope.Log("logscale: %v", err)
 				return
 			}
 		}
 
 		err = queue.SetHttpTransport(transport)
 		if err != nil {
-			scope.Log("humio: %v", err)
+			scope.Log("logscale: %v", err)
 			return
 		}
 
 		err = queue.Open(scope, arg.ApiBaseUrl, arg.IngestToken)
 		if err != nil {
-			scope.Log("humio: could not open queue: %v", err)
+			scope.Log("logscale: could not open queue: %v", err)
 			return
 		}
 		queue.Log(scope, "plugin started (%v threads)", queue.WorkerCount())
@@ -240,17 +240,17 @@ func (self humioPlugin) Call(ctx context.Context,
 	return outputChan
 }
 
-func (self humioPlugin) Info(
+func (self logscalePlugin) Info(
 	scope vfilter.Scope,
 	type_map *vfilter.TypeMap) *vfilter.PluginInfo {
 	return &vfilter.PluginInfo{
-		Name: "humio_upload",
-		Doc:  "Upload rows to Humio ingestion server.",
+		Name: "logscale_upload",
+		Doc:  "Upload rows to LogScale ingestion server.",
 
-		ArgType: type_map.AddType(scope, &humioPluginArgs{}),
+		ArgType: type_map.AddType(scope, &logscalePluginArgs{}),
 	}
 }
 
 func init() {
-	vql_subsystem.RegisterPlugin(&humioPlugin{})
+	vql_subsystem.RegisterPlugin(&logscalePlugin{})
 }
