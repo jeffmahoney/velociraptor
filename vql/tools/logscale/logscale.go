@@ -568,20 +568,19 @@ func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scop
 	dropEvents := false
 	totalEventCount := 0
 
-	ticker := time.NewTicker(self.batchingTimeoutDuration)
-
 	defer self.Debug(scope, "worker exited")
-	defer ticker.Stop()
 	defer func() { self.postEvents(ctx, scope, postData) }()
 
 	self.Debug(scope, "worker started")
+
+	clock := utils.GetTime()
 
 	for {
 		postEvents := false
 
 		// We don't watch the context because the context isn't meant to be canceled
 		select {
-		case <-ticker.C:
+		case <-clock.After(self.batchingTimeoutDuration):
 			if eventCount > 0 {
 				postEvents = true
 			}
@@ -630,7 +629,6 @@ func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scop
 
 			postData = []*ordereddict.Dict{}
 			eventCount = 0
-			ticker.Reset(self.batchingTimeoutDuration)
 		}
 	}
 }
