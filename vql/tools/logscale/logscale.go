@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"math/rand"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -84,6 +85,7 @@ var errQueueOpened = errors.New("Cannot modify parameters of open queue")
 type LogScaleQueue struct {
 	scope                  	  vfilter.Scope
 	config                 	  *config_proto.Config
+	lock			  sync.Mutex
 
 	listener                  *directory.Listener
 	workerGrp                 *errgroup.Group
@@ -91,8 +93,7 @@ type LogScaleQueue struct {
 
 	httpClient                *http.Client
 	httpTransport             *http.Transport
-	// (bool) whether the queue is open
-	queueOpened		  int64
+	opened			  bool
 
 	endpointUrl               string
 	authToken		  string
@@ -108,6 +109,7 @@ type LogScaleQueue struct {
 	id			  int
 	logPrefix		  string
 	maxRetries		  int
+	queueClosing		  int64
 
 	// Statistics
 	// count of events queued for posting across all workers
@@ -154,11 +156,17 @@ func NewLogScaleQueue(config_obj *config_proto.Config) *LogScaleQueue {
 }
 
 func (self *LogScaleQueue) WorkerCount() int {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
 	return self.nWorkers
 }
 
 func (self *LogScaleQueue) SetWorkerCount(count int) error {
-	if self.Opened() {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	if self.opened {
 		return errQueueOpened
 	}
 	if count <= 0 {
@@ -173,7 +181,10 @@ func (self *LogScaleQueue) SetWorkerCount(count int) error {
 }
 
 func (self *LogScaleQueue) SetBatchingTimeoutDuration(timeout time.Duration) error {
-	if self.Opened() {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	if self.opened {
 		return errQueueOpened
 	}
 	if timeout <= 0 {
@@ -188,7 +199,10 @@ func (self *LogScaleQueue) SetBatchingTimeoutDuration(timeout time.Duration) err
 }
 
 func (self *LogScaleQueue) SetEventBatchSize(size int) error {
-	if self.Opened() {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	if self.opened {
 		return errQueueOpened
 	}
 	if size <= 0 {
@@ -203,7 +217,10 @@ func (self *LogScaleQueue) SetEventBatchSize(size int) error {
 }
 
 func (self *LogScaleQueue) SetHttpClientTimeoutDuration(timeout time.Duration) error {
-	if self.Opened() {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	if self.opened {
 		return errQueueOpened
 	}
 	if timeout <= 0 {
@@ -218,7 +235,10 @@ func (self *LogScaleQueue) SetHttpClientTimeoutDuration(timeout time.Duration) e
 }
 
 func (self *LogScaleQueue) SetMaxRetries(max int) error {
-	if self.Opened() {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	if self.opened {
 		return errQueueOpened
 	}
 
@@ -227,7 +247,10 @@ func (self *LogScaleQueue) SetMaxRetries(max int) error {
 }
 
 func (self *LogScaleQueue) SetTaggedFields(tags []string) error {
-	if self.Opened() {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	if self.opened {
 		return errQueueOpened
 	}
 
@@ -265,7 +288,10 @@ func (self *LogScaleQueue) SetTaggedFields(tags []string) error {
 }
 
 func (self *LogScaleQueue) SetHttpTransport(transport *http.Transport) error {
-	if self.Opened() {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	if self.opened {
 		return errQueueOpened
 	}
 
@@ -274,6 +300,9 @@ func (self *LogScaleQueue) SetHttpTransport(transport *http.Transport) error {
 }
 
 func (self *LogScaleQueue) Open(scope vfilter.Scope, baseUrl string, authToken string) error {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
 	self.endpointUrl = baseUrl + apiEndpoint
 	self.authToken = authToken
 
@@ -328,7 +357,7 @@ func (self *LogScaleQueue) Open(scope vfilter.Scope, baseUrl string, authToken s
 		return err
 	}
 
-	self.queueOpened = 1
+	self.opened = true
 	for i := 0; i < self.nWorkers; i++ {
 		self.workerGrp.Go(func() error {
 			return self.processEvents(self.workerCtx, scope)
@@ -338,12 +367,11 @@ func (self *LogScaleQueue) Open(scope vfilter.Scope, baseUrl string, authToken s
 	return nil
 }
 
-func (self *LogScaleQueue) Opened() bool {
-	return atomic.LoadInt64(&self.queueOpened) > 0
-}
-
 func (self *LogScaleQueue) addDebugCallback(count int, callback func(int)) error {
-	if self.Opened() {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	if self.opened {
 		return errQueueOpened
 	}
 
@@ -515,7 +543,7 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 
 		// If the queue is shutting down and we're failing to post messages, stop
 		// trying and fail fast so we can exit.
-		if atomic.LoadInt64(&self.queueOpened) == 0 {
+		if self.Closing() {
 			self.Log(scope, "Failed to POST events, will not retry due to plugin shutting down. Dropped %v events.", nRows)
 			atomic.AddInt64(&self.failedEvents, int64(nRows))
 			return errQueueShutdown
@@ -638,11 +666,22 @@ func (self *LogScaleQueue) QueueEvent(row *ordereddict.Dict) {
 	atomic.AddInt64(&self.currentQueueDepth, 1)
 }
 
+// This can be racy but it's only used to determine whether we should skip retries
+func (self *LogScaleQueue) Closing() bool {
+	return atomic.LoadInt64(&self.queueClosing) != 0
+}
+
 func (self *LogScaleQueue) Close(scope vfilter.Scope) {
-	if !atomic.CompareAndSwapInt64(&self.queueOpened, 1, 0) {
-		// Already shut down
+	self.lock.Lock()
+	defer self.lock.Unlock()
+
+	if !self.opened {
 		return
 	}
+
+	self.opened = false
+	atomic.StoreInt64(&self.queueClosing, 1)
+
 	backlog := atomic.LoadInt64(&self.currentQueueDepth)
 	if backlog > 0 {
 		self.Log(scope, "Plugin shutting down.  There is a backlog of %v events that will be processed in the background before the plugin finally exits.  If this artifact was reconfigured, another invocation will proceed normally in parallel.", backlog)
@@ -662,6 +701,7 @@ func (self *LogScaleQueue) Close(scope vfilter.Scope) {
 	if err != nil || (dropped + backlog) > 0 {
 		self.Log(scope, "Queue closed with %v dropped events: %v", dropped + backlog, err)
 	}
+	atomic.StoreInt64(&self.queueClosing, 0)
 }
 
 func (self *LogScaleQueue) Log(scope vfilter.Scope, fmt string, args ...any) {
