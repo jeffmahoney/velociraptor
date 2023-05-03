@@ -203,39 +203,34 @@ func (self logscalePlugin) Call(ctx context.Context,
 			return
 		}
 
-		err = queue.Open(scope, arg.ApiBaseUrl, arg.IngestToken)
+		err = queue.Open(ctx, scope, arg.ApiBaseUrl, arg.IngestToken)
 		if err != nil {
 			scope.Log("logscale: could not open queue: %v", err)
 			return
 		}
 		queue.Log(scope, "plugin started (%v threads)", queue.WorkerCount())
-		defer queue.Log(scope, "plugin terminating")
-		defer queue.Close(scope)
 
 		rowChan := arg.Query.Eval(ctx, scope)
-		finished := false
-
 		ticker := time.NewTicker(gStatsLogPeriod)
+		done:
 		for {
-			if finished {
-				break
-			}
 			select {
 			case <- ctx.Done():
-				finished = true
-				break
+				break done
 			case row, ok := <- rowChan:
 				if !ok {
-					finished = true
-					break
+					break done
 				}
 				rowData := vfilter.RowToDict(ctx, scope, row)
 				queue.QueueEvent(rowData)
 			case <-ticker.C:
-				queue.PostBacklogStats(scope)
+				queue.PostStats(scope)
 				ticker.Reset(gStatsLogPeriod)
 			}
 		}
+
+		queue.Close(scope)
+		queue.Log(scope, "plugin terminating")
 	}()
 	return outputChan
 }

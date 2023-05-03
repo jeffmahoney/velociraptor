@@ -14,8 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/Velocidex/ordereddict"
-	"golang.org/x/sync/errgroup"
 	"www.velocidex.com/golang/velociraptor/constants"
 	config_proto "www.velocidex.com/golang/velociraptor/config/proto"
 	"www.velocidex.com/golang/velociraptor/file_store/api"
@@ -86,10 +86,10 @@ type LogScaleQueue struct {
 	scope                  	  vfilter.Scope
 	config                 	  *config_proto.Config
 	lock			  sync.Mutex
+	cancel			  func()
 
 	listener                  *directory.Listener
-	workerGrp                 *errgroup.Group
-	workerCtx		  context.Context
+	workerWg		  sync.WaitGroup
 
 	httpClient                *http.Client
 	httpTransport             *http.Transport
@@ -118,6 +118,8 @@ type LogScaleQueue struct {
 	droppedEvents		  int64
 	// count of events successfully posted
 	postedEvents		  int64
+	// count of bytes successfully posted
+	postedBytes		  int64
 	// count of events that failed to post
 	failedEvents		  int64
 	// count of retries since startup
@@ -299,7 +301,8 @@ func (self *LogScaleQueue) SetHttpTransport(transport *http.Transport) error {
 	return nil
 }
 
-func (self *LogScaleQueue) Open(scope vfilter.Scope, baseUrl string, authToken string) error {
+func (self *LogScaleQueue) Open(parentCtx context.Context, scope vfilter.Scope,
+				baseUrl string, authToken string) error {
 	self.lock.Lock()
 	defer self.lock.Unlock()
 
@@ -336,9 +339,6 @@ func (self *LogScaleQueue) Open(scope vfilter.Scope, baseUrl string, authToken s
 		}
 	}
 
-	// We want to do our own cleanup, which has a pipeline we want to flush if we can
-	self.workerGrp, self.workerCtx = errgroup.WithContext(context.Background())
-
 	self.httpClient = &http.Client{Timeout: self.httpClientTimeoutDuration,
 				       Transport: transport}
 
@@ -350,18 +350,27 @@ func (self *LogScaleQueue) Open(scope vfilter.Scope, baseUrl string, authToken s
 		FileBufferLeaseSize: 100,
 		OwnerName: "logscale-plugin",
 	}
-	self.listener, err = directory.NewListener(self.config, self.workerCtx,
-						   options.OwnerName, options)
+
+	// Canceling the listener's context prevents it from clearing its queue
+	ctx, cancel := context.WithCancel(context.Background())
+	self.listener, err = directory.NewListener(self.config, ctx, options.OwnerName, options)
 	if err != nil {
-		self.workerGrp.Wait()
 		return err
 	}
 
+	err = vql_subsystem.GetRootScope(scope).AddDestructor(func() {
+		cancel()
+		if self.listener != nil {
+			self.listener.Close()
+		}
+	})
+
+
+	ctx, self.cancel = context.WithCancel(parentCtx)
 	self.opened = true
 	for i := 0; i < self.nWorkers; i++ {
-		self.workerGrp.Go(func() error {
-			return self.processEvents(self.workerCtx, scope)
-		})
+		self.workerWg.Add(1)
+		go self.processEvents(ctx, scope)
 	}
 
 	return nil
@@ -457,10 +466,8 @@ func (self *LogScaleQueue) rowToPayload(ctx context.Context, scope vfilter.Scope
 	return payload
 }
 
-func (self *LogScaleQueue) postBytes(ctx context.Context, scope vfilter.Scope,
-				  data []byte, count int) (error, bool) {
-	req, err := http.NewRequestWithContext(ctx, "POST", self.endpointUrl,
-					       bytes.NewReader(data))
+func (self *LogScaleQueue) postBytes(scope vfilter.Scope, data []byte, count int) (error, bool) {
+	req, err := http.NewRequest("POST", self.endpointUrl, bytes.NewReader(data))
 	req.Header.Add("User-Agent", constants.USER_AGENT)
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", self.authToken))
@@ -475,7 +482,7 @@ func (self *LogScaleQueue) postBytes(ctx context.Context, scope vfilter.Scope,
 	self.Debug(scope, "sent %d events %d bytes, response with status: %v",
 		   count, len(data), resp.Status)
 	body := &bytes.Buffer{}
-	_, err = utils.Copy(ctx, body, resp.Body)
+	_, err = io.Copy(body, resp.Body)
 	if err != nil {
 		self.Log(scope, "copy of response failed: %v, %v", resp.Status, err)
 		return err, false
@@ -527,13 +534,14 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 	failed := false
 	retries := 0
 	for {
-		err, retry := self.postBytes(ctx, scope, data, nRows)
+		err, retry := self.postBytes(scope, data, nRows)
 		if err == nil || err == io.EOF {
 			if failed {
 				self.Log(scope, "Retry successful, pushing backlog.")
 			}
 			if err == nil {
 				atomic.AddInt64(&self.postedEvents, int64(nRows))
+				atomic.AddInt64(&self.postedBytes, int64(len(data)))
 			}
 			return err
 		}
@@ -541,10 +549,8 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 		failed = true
 		wait := time.Duration(gMaxPoll + rand.Intn(gMaxPollDev)) * time.Second
 
-		// If the queue is shutting down and we're failing to post messages, stop
-		// trying and fail fast so we can exit.
-		if self.Closing() {
-			self.Log(scope, "Failed to POST events, will not retry due to plugin shutting down. Dropped %v events.", nRows)
+		if ctx.Err() != nil {
+			self.Log(scope, "Failed to POST events while queue is closing.  Dropping remaining events.")
 			atomic.AddInt64(&self.failedEvents, int64(nRows))
 			return errQueueShutdown
 		} else if retry {
@@ -572,7 +578,6 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 		}
 
 		if retry {
-			self.Log(scope, "adding to retries")
 			atomic.AddInt64(&self.totalRetries, 1)
 		} else {
 			return err
@@ -590,12 +595,13 @@ func (self *LogScaleQueue) debugEvents(count int) {
 	}
 }
 
-func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scope) error {
+func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scope) {
 	postData := []*ordereddict.Dict{}
 	eventCount := 0
 	dropEvents := false
 	totalEventCount := 0
 
+	defer self.workerWg.Done()
 	defer self.Debug(scope, "worker exited")
 	defer func() { self.postEvents(ctx, scope, postData) }()
 
@@ -606,7 +612,9 @@ func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scop
 	for {
 		postEvents := false
 
-		// We don't watch the context because the context isn't meant to be canceled
+		// We don't watch the context because we need to clear the queue first.
+		// The context cancelation will close the listener, which will close
+		// the output channel once the queue is flushed.
 		select {
 		case <-clock.After(self.batchingTimeoutDuration):
 			if eventCount > 0 {
@@ -615,14 +623,13 @@ func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scop
 		case row, ok := <-self.listener.Output():
 			if !ok {
 				self.Debug(scope, "worker exiting due to closed channel")
-				return nil
+				return
 			}
 
 			if self.debugEventsEnabled {
 				self.debugEvents(totalEventCount)
 			}
 
-			self.Debug(scope, "dequeued event/1")
 			atomic.AddInt64(&self.currentQueueDepth, -1)
 
 			if dropEvents {
@@ -684,22 +691,30 @@ func (self *LogScaleQueue) Close(scope vfilter.Scope) {
 
 	backlog := atomic.LoadInt64(&self.currentQueueDepth)
 	if backlog > 0 {
-		self.Log(scope, "Plugin shutting down.  There is a backlog of %v events that will be processed in the background before the plugin finally exits.  If this artifact was reconfigured, another invocation will proceed normally in parallel.", backlog)
+		self.Log(scope, "Closing submission queue. There is a backlog of %v events that will be processed prior to completion.", backlog)
 	}
 
-	if self.listener != nil {
-		self.listener.Close()
-	}
+	// Order is important:
+	// Closing the listener after canceling it will drop all remaining events, so
+	// we can't cancel it.
+	// If we close the listener before canceling the workers, the workers will
+	// continue to retry posting events after failure and closing could take a
+	// very long time.
+	self.cancel()
 
-	var err error
-	if self.workerGrp != nil {
-		err = self.workerGrp.Wait()
-	}
+	// Stop listening for more events
+	self.listener.Close()
+
+	// Wait for workers to finish flushing
+	self.workerWg.Wait()
+
+	// The listener needs to be valid until all workers exit
+	self.listener = nil
 
 	dropped := atomic.LoadInt64(&self.droppedEvents)
 	backlog = atomic.LoadInt64(&self.currentQueueDepth)
-	if err != nil || (dropped + backlog) > 0 {
-		self.Log(scope, "Queue closed with %v dropped events: %v", dropped + backlog, err)
+	if (dropped + backlog) > 0 {
+		self.Log(scope, "Queue closed with %v dropped events", dropped + backlog)
 	}
 	atomic.StoreInt64(&self.queueClosing, 0)
 }
@@ -714,10 +729,17 @@ func (self *LogScaleQueue) Debug(scope vfilter.Scope, fmt string, args ...any) {
 	}
 }
 
-func (self *LogScaleQueue) PostBacklogStats(scope vfilter.Scope) {
+func (self *LogScaleQueue) PostStats(scope vfilter.Scope) {
 	currentQueueDepth := atomic.LoadInt64(&self.currentQueueDepth)
 	queuedBytes := self.listener.FileBufferSize()
-	self.Log(scope, "Backlog size: %v events %v bytes", currentQueueDepth, queuedBytes)
+	postedEvents := atomic.LoadInt64(&self.postedEvents)
+	postedBytes := atomic.LoadInt64(&self.postedBytes)
+	droppedEvents := atomic.LoadInt64(&self.failedEvents)
+	totalRetries := atomic.LoadInt64(&self.totalRetries)
+
+	self.Log(scope, "Posted %v events %v bytes, backlog of %v events %v bytes, %v events dropped, %v retries",
+		 postedEvents, postedBytes, currentQueueDepth, queuedBytes, droppedEvents,
+		 totalRetries)
 }
 
 type logscalePlugin struct{}

@@ -164,30 +164,30 @@ func (self *LogScaleQueueTestSuite) TearDownTest() {
 }
 
 func (self *LogScaleQueueTestSuite) TestEmptyUrl() {
-	err := self.queue.Open(self.scope, "", validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, "", validAuthToken)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
 func (self *LogScaleQueueTestSuite) TestInvalidUrl() {
-	err := self.queue.Open(self.scope, "invalid-url", validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, "invalid-url", validAuthToken)
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
 func (self *LogScaleQueueTestSuite) TestValidUrl() {
-	err := self.queue.Open(self.scope, validUrl, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, validUrl, validAuthToken)
 	require.NoError(self.T(), err)
 }
 
 func (self *LogScaleQueueTestSuite) TestEmptyAuthToken() {
-	err := self.queue.Open(self.scope, validUrl, "")
+	err := self.queue.Open(self.ctx, self.scope, validUrl, "")
 	require.NotNil(self.T(), err)
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
 func (self *LogScaleQueueTestSuite) TestValidAuthToken() {
-	err := self.queue.Open(self.scope, validUrl, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, validUrl, validAuthToken)
 	require.NoError(self.T(), err)
 }
 
@@ -263,7 +263,7 @@ func (self *LogScaleQueueTestSuite) TestSetHttpTransportNil() {
 	server := self.startMockServer()
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 	require.NotNil(self.T(), self.queue.httpClient.Transport)
 }
@@ -280,7 +280,7 @@ func (self *LogScaleQueueTestSuite) TestSetHttpTransportValid() {
 	server := self.startMockServer()
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 	require.NotNil(self.T(), self.queue.httpClient.Transport)
 }
@@ -626,12 +626,12 @@ func (self *LogScaleQueueTestSuite) TestPostBytesValid() {
 	server := self.startMockServer()
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	data := self.preparePayloads(payloads)
 
-	err, retry := self.queue.postBytes(self.ctx, self.scope, data, len(payloads))
+	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
 	require.NoError(self.T(), err)
 	require.False(self.T(), retry)
 }
@@ -643,12 +643,12 @@ func (self *LogScaleQueueTestSuite) TestPostBytesEmpty() {
 	server := self.startMockServer()
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	data := self.preparePayloads(payloads)
 
-	err, retry := self.queue.postBytes(self.ctx, self.scope, data, len(payloads))
+	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
 	require.NoError(self.T(), err)
 	require.False(self.T(), retry)
 }
@@ -659,12 +659,12 @@ func (self *LogScaleQueueTestSuite) TestPostBytesEmptyTimeout() {
 	server := self.startMockServerWithHandler(handlerTimeout)
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	data := self.preparePayloads(payloads)
 
-	err, retry := self.queue.postBytes(self.ctx, self.scope, data, len(payloads))
+	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
 	var netErr net.Error
 	require.ErrorAs(self.T(), err, &netErr)
 	require.True(self.T(), netErr.Timeout())
@@ -674,12 +674,12 @@ func (self *LogScaleQueueTestSuite) TestPostBytesEmptyTimeout() {
 func (self *LogScaleQueueTestSuite) TestPostBytesEmptyConnRefused() {
 	payloads := []*LogScalePayload{}
 
-	err := self.queue.Open(self.scope, "http://localhost:1", validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, "http://localhost:1", validAuthToken)
 	require.NoError(self.T(), err)
 
 	data := self.preparePayloads(payloads)
 
-	err, retry := self.queue.postBytes(self.ctx, self.scope, data, len(payloads))
+	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
 	var netErr net.Error
 	require.ErrorAs(self.T(), err, &netErr)
 	require.ErrorIs(self.T(), err, syscall.ECONNREFUSED)
@@ -699,11 +699,11 @@ func (self *LogScaleQueueTestSuite) TestPostBytesNoEvents() {
 	server := self.startMockServer()
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	data := self.preparePayloads(payloads)
-	err, retry := self.queue.postBytes(self.ctx, self.scope, data, len(payloads))
+	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
 	clientError := errHttpClientError{}
 	require.True(self.T(), errors.As(err, &clientError))
 	require.Equal(self.T(), clientError.StatusCode, http.StatusBadRequest)
@@ -716,7 +716,7 @@ func (self *LogScaleQueueTestSuite) TestPostEventsEmpty() {
 	server := self.startMockServer()
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	err = self.queue.postEvents(self.ctx, self.scope, rows)
@@ -731,7 +731,7 @@ func (self *LogScaleQueueTestSuite) TestPostEventsSingle() {
 	server := self.startMockServer()
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	err = self.queue.postEvents(self.ctx, self.scope, rows)
@@ -747,7 +747,7 @@ func (self *LogScaleQueueTestSuite) TestPostEventsSingleTimeout() {
 	server := self.startMockServerWithHandler(handlerTimeout)
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	err = self.queue.postEvents(self.ctx, self.scope, rows)
@@ -768,7 +768,7 @@ func (self *LogScaleQueueTestSuite) TestPostEventsSingleConnRefused() {
 	server := self.startMockServerWithHandler(handlerTimeout)
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, "http://localhost:1", validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, "http://localhost:1", validAuthToken)
 	require.NoError(self.T(), err)
 
 	err = self.queue.postEvents(self.ctx, self.scope, rows)
@@ -792,7 +792,7 @@ func (self *LogScaleQueueTestSuite) TestPostEventsMultiple() {
 	server := self.startMockServer()
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	err = self.queue.postEvents(self.ctx, self.scope, rows)
@@ -810,7 +810,7 @@ func (self *LogScaleQueueTestSuite) TestPostEventsMultipleTimeout() {
 	server := self.startMockServerWithHandler(handlerTimeout)
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	err = self.queue.postEvents(self.ctx, self.scope, rows)
@@ -834,7 +834,7 @@ func (self *LogScaleQueueTestSuite) TestPostEventsMultipleConnRefused() {
 	server := self.startMockServerWithHandler(handlerTimeout)
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, "http://localhost:1", validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, "http://localhost:1", validAuthToken)
 	require.NoError(self.T(), err)
 
 	err = self.queue.postEvents(self.ctx, self.scope, rows)
@@ -855,7 +855,7 @@ func (self *LogScaleQueueTestSuite) TestQueueEvents_Queued() {
 	// Special case: We want to do the processing ourselves
 	self.queue.nWorkers = 0
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	rows := []*ordereddict.Dict{}
@@ -885,7 +885,7 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_Dequeued() {
 	// Special case: We want to do the processing ourselves
 	self.queue.nWorkers = 0
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	rows := []*ordereddict.Dict{}
@@ -944,7 +944,7 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedFailure() {
 	// Special case: We want to do the processing ourselves
 	self.queue.nWorkers = 0
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	rows := []*ordereddict.Dict{}
@@ -974,6 +974,7 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedFailure() {
 				}
 				atomic.AddInt64(&self.queue.currentQueueDepth, -1)
 
+				// Can't use debugEvents since those are handled in processEvents
 				if count == 2 {
 					server.Close()
 					server = self.startMockServerWithHandler(handler500)
@@ -1021,7 +1022,7 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedConnRefused() {
 	// Special case: We want to do the processing ourselves
 	self.queue.nWorkers = 0
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	rows := []*ordereddict.Dict{}
@@ -1094,7 +1095,7 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_Working() {
 	server := self.startMockServer()
 	defer server.Close()
 
-	err := self.queue.Open(self.scope, server.URL, validAuthToken)
+	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	rows := []*ordereddict.Dict{}
@@ -1128,7 +1129,7 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownWhileFailing() {
 			self.queue.endpointUrl = "http://localhost:1" + apiEndpoint
 		})
 
-	err = self.queue.Open(self.scope, server.URL, validAuthToken)
+	err = self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	rows := []*ordereddict.Dict{}
@@ -1182,7 +1183,7 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownAfterRecovery() {
 		wg1.Done()
 		})
 
-	err = self.queue.Open(self.scope, server.URL, validAuthToken)
+	err = self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	rows := []*ordereddict.Dict{}
@@ -1236,7 +1237,7 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_4xx() {
 		wg1.Done()
 		})
 
-	err = self.queue.Open(self.scope, server.URL, validAuthToken)
+	err = self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
 	require.NoError(self.T(), err)
 
 	rows := []*ordereddict.Dict{}
