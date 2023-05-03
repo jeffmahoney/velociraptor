@@ -29,6 +29,7 @@ import (
         "www.velocidex.com/golang/velociraptor/paths"
         "www.velocidex.com/golang/velociraptor/services"
         "www.velocidex.com/golang/velociraptor/services/indexing"
+        "www.velocidex.com/golang/velociraptor/utils"
         "www.velocidex.com/golang/velociraptor/vql/acl_managers"
         vql_subsystem "www.velocidex.com/golang/velociraptor/vql"
 	"www.velocidex.com/golang/velociraptor/vql/functions"
@@ -61,6 +62,9 @@ type LogScaleQueueTestSuite struct {
         clients		[]string
 
 	server		*httptest.Server
+	start		time.Time
+
+	restoreClock	func()
 }
 
 func formatTimestamp(ts time.Time) string {
@@ -71,11 +75,14 @@ func formatTimestamp(ts time.Time) string {
 func (self *LogScaleQueueTestSuite) SetupTest() {
 	self.ConfigObj = self.LoadConfig()
 	self.TestSuite.SetupTest()
+	self.start = time.Now()
 
 	self.queue = NewLogScaleQueue(self.ConfigObj)
 	self.queue.SetHttpClientTimeoutDuration(time.Duration(1) * time.Second)
 	self.queue.SetMaxRetries(1)
 	self.scope = self.getScope()
+
+	self.restoreClock = utils.MockTime(&utils.MockClock{MockNow: time.Unix(10, 10)})
 
 	self.ctx = context.Background()
 	self.populateClients()
@@ -153,6 +160,7 @@ func (self *LogScaleQueueTestSuite) TearDownTest() {
 	if self.queue != nil {
 		self.queue.Close(self.scope)
 	}
+	self.restoreClock()
 }
 
 func (self *LogScaleQueueTestSuite) TestEmptyUrl() {
@@ -985,7 +993,11 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedFailure() {
 
 				count += 1
 			}
+			if count >= len(rows) {
+				break
+			}
 		}
+		self.queue.Close(self.scope)
 		require.Equal(self.T(), len(rows), count)
 	}()
 
@@ -999,6 +1011,7 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedFailure() {
 	require.Equal(self.T(), 2, int(atomic.LoadInt32(&self.queue.postedEvents)))
 	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.droppedEvents)))
 	cancel()
+	self.queue = nil
 }
 
 func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedConnRefused() {
@@ -1055,7 +1068,11 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedConnRefused() {
 
 				count += 1
 			}
+			if count >= len(rows) {
+				break
+			}
 		}
+		self.queue.Close(self.scope)
 		require.Equal(self.T(), len(rows), count)
 	}()
 
@@ -1063,12 +1080,12 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedConnRefused() {
 		self.queue.QueueEvent(row)
 	}
 
-
 	wg.Wait()
 	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.currentQueueDepth)))
 	require.Equal(self.T(), 2, int(atomic.LoadInt32(&self.queue.failedEvents)))
 	require.Equal(self.T(), 2, int(atomic.LoadInt32(&self.queue.postedEvents)))
 	cancel()
+	self.queue = nil
 }
 
 func (self *LogScaleQueueTestSuite) TestProcessEvents_Working() {
@@ -1097,6 +1114,7 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_Working() {
 	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.droppedEvents)))
 	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.totalRetries)))
 	require.Equal(self.T(), nRows, int(atomic.LoadInt32(&self.queue.postedEvents)))
+	self.queue = nil
 }
 
 func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownWhileFailing() {
@@ -1133,6 +1151,7 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownWhileFailing() {
 	require.Equal(self.T(), (nRows / 2) - 1, int(atomic.LoadInt32(&self.queue.droppedEvents)))
 	require.Equal(self.T(), nRows / 2, int(atomic.LoadInt32(&self.queue.postedEvents)))
 	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.totalRetries)))
+	self.queue = nil
 }
 
 func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownAfterRecovery() {
@@ -1187,6 +1206,7 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownAfterRecovery() {
 	require.Equal(self.T(), nRows - 1, int(atomic.LoadInt32(&self.queue.postedEvents)))
 	require.Equal(self.T(), 1, int(atomic.LoadInt32(&self.queue.totalRetries)))
 	require.Equal(self.T(), 1, int(atomic.LoadInt32(&self.queue.failedEvents)))
+	self.queue = nil
 }
 
 func (self *LogScaleQueueTestSuite) TestProcessEvents_4xx() {
@@ -1240,6 +1260,7 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_4xx() {
 	require.Equal(self.T(), 95, int(atomic.LoadInt32(&self.queue.postedEvents)))
 	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.totalRetries)))
 	require.Equal(self.T(), 5, int(atomic.LoadInt32(&self.queue.failedEvents)))
+	self.queue = nil
 }
 
 func TestLogScaleQueue(t *testing.T) {
