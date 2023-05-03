@@ -38,7 +38,7 @@ var (
 	gMaxPoll = 60
 	gMaxPollDev = 30
 	gStatsLogPeriod = time.Duration(30) * time.Second
-	gNextId int32 = 0
+	gNextId int64 = 0
 
 	apiEndpoint = "/v1/ingest/humio-structured"
 )
@@ -92,7 +92,7 @@ type LogScaleQueue struct {
 	httpClient                *http.Client
 	httpTransport             *http.Transport
 	// (bool) whether the queue is open
-	queueOpened		  int32
+	queueOpened		  int64
 
 	endpointUrl               string
 	authToken		  string
@@ -111,15 +111,15 @@ type LogScaleQueue struct {
 
 	// Statistics
 	// count of events queued for posting across all workers
-	currentQueueDepth	  int32
+	currentQueueDepth	  int64
 	// count of events dropped during shutdown across all workers
-	droppedEvents		  int32
+	droppedEvents		  int64
 	// count of events successfully posted
-	postedEvents		  int32
+	postedEvents		  int64
 	// count of events that failed to post
-	failedEvents		  int32
+	failedEvents		  int64
 	// count of retries since startup
-	totalRetries		  int32
+	totalRetries		  int64
 }
 
 type LogScaleEvent struct {
@@ -313,7 +313,7 @@ func (self *LogScaleQueue) Open(scope vfilter.Scope, baseUrl string, authToken s
 	self.httpClient = &http.Client{Timeout: self.httpClientTimeoutDuration,
 				       Transport: transport}
 
-	self.id = int(atomic.AddInt32(&gNextId, 1))
+	self.id = int(atomic.AddInt64(&gNextId, 1))
 	self.logPrefix = fmt.Sprintf("logscale/%v: ", self.id)
 
 	options := api.QueueOptions{
@@ -339,7 +339,7 @@ func (self *LogScaleQueue) Open(scope vfilter.Scope, baseUrl string, authToken s
 }
 
 func (self *LogScaleQueue) Opened() bool {
-	return atomic.LoadInt32(&self.queueOpened) > 0
+	return atomic.LoadInt64(&self.queueOpened) > 0
 }
 
 func (self *LogScaleQueue) addDebugCallback(count int, callback func(int)) error {
@@ -505,7 +505,7 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 				self.Log(scope, "Retry successful, pushing backlog.")
 			}
 			if err == nil {
-				atomic.AddInt32(&self.postedEvents, int32(nRows))
+				atomic.AddInt64(&self.postedEvents, int64(nRows))
 			}
 			return err
 		}
@@ -515,14 +515,14 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 
 		// If the queue is shutting down and we're failing to post messages, stop
 		// trying and fail fast so we can exit.
-		if atomic.LoadInt32(&self.queueOpened) == 0 {
+		if atomic.LoadInt64(&self.queueOpened) == 0 {
 			self.Log(scope, "Failed to POST events, will not retry due to plugin shutting down. Dropped %v events.", nRows)
-			atomic.AddInt32(&self.failedEvents, int32(nRows))
+			atomic.AddInt64(&self.failedEvents, int64(nRows))
 			return errQueueShutdown
 		} else if retry {
 			retries += 1
 			if self.maxRetries >= 0 && retries > self.maxRetries {
-				atomic.AddInt32(&self.failedEvents, int32(nRows))
+				atomic.AddInt64(&self.failedEvents, int64(nRows))
 				return errMaxRetriesExceeded{
 					LastError: err,
 					Retries: retries,
@@ -534,7 +534,7 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 			// We want to wait after 4xx errors or we'll just spam the server
 			// if something is wrong.
 			self.Log(scope, "Failed to POST events, will not retry due to client error. Dropped %v events. Waiting %v before attempting next submission.", nRows, wait)
-			atomic.AddInt32(&self.failedEvents, int32(nRows))
+			atomic.AddInt64(&self.failedEvents, int64(nRows))
 		}
 
 		select {
@@ -545,7 +545,7 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 
 		if retry {
 			self.Log(scope, "adding to retries")
-			atomic.AddInt32(&self.totalRetries, 1)
+			atomic.AddInt64(&self.totalRetries, 1)
 		} else {
 			return err
 		}
@@ -595,10 +595,10 @@ func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scop
 			}
 
 			self.Debug(scope, "dequeued event/1")
-			atomic.AddInt32(&self.currentQueueDepth, -1)
+			atomic.AddInt64(&self.currentQueueDepth, -1)
 
 			if dropEvents {
-				atomic.AddInt32(&self.droppedEvents, 1)
+				atomic.AddInt64(&self.droppedEvents, 1)
 				continue
 			}
 
@@ -635,15 +635,15 @@ func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scop
 
 func (self *LogScaleQueue) QueueEvent(row *ordereddict.Dict) {
 	self.listener.Send(row)
-	atomic.AddInt32(&self.currentQueueDepth, 1)
+	atomic.AddInt64(&self.currentQueueDepth, 1)
 }
 
 func (self *LogScaleQueue) Close(scope vfilter.Scope) {
-	if !atomic.CompareAndSwapInt32(&self.queueOpened, 1, 0) {
+	if !atomic.CompareAndSwapInt64(&self.queueOpened, 1, 0) {
 		// Already shut down
 		return
 	}
-	backlog := atomic.LoadInt32(&self.currentQueueDepth)
+	backlog := atomic.LoadInt64(&self.currentQueueDepth)
 	if backlog > 0 {
 		self.Log(scope, "Plugin shutting down.  There is a backlog of %v events that will be processed in the background before the plugin finally exits.  If this artifact was reconfigured, another invocation will proceed normally in parallel.", backlog)
 	}
@@ -657,8 +657,8 @@ func (self *LogScaleQueue) Close(scope vfilter.Scope) {
 		err = self.workerGrp.Wait()
 	}
 
-	dropped := atomic.LoadInt32(&self.droppedEvents)
-	backlog = atomic.LoadInt32(&self.currentQueueDepth)
+	dropped := atomic.LoadInt64(&self.droppedEvents)
+	backlog = atomic.LoadInt64(&self.currentQueueDepth)
 	if err != nil || (dropped + backlog) > 0 {
 		self.Log(scope, "Queue closed with %v dropped events: %v", dropped + backlog, err)
 	}
@@ -675,7 +675,7 @@ func (self *LogScaleQueue) Debug(scope vfilter.Scope, fmt string, args ...any) {
 }
 
 func (self *LogScaleQueue) PostBacklogStats(scope vfilter.Scope) {
-	currentQueueDepth := atomic.LoadInt32(&self.currentQueueDepth)
+	currentQueueDepth := atomic.LoadInt64(&self.currentQueueDepth)
 	queuedBytes := self.listener.FileBufferSize()
 	self.Log(scope, "Backlog size: %v events %v bytes", currentQueueDepth, queuedBytes)
 }

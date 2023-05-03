@@ -869,7 +869,7 @@ func (self *LogScaleQueueTestSuite) TestQueueEvents_Queued() {
 		self.queue.QueueEvent(row)
 	}
 
-	require.Equal(self.T(), len(rows), int(atomic.LoadInt32(&self.queue.currentQueueDepth)))
+	require.Equal(self.T(), len(rows), int(atomic.LoadInt64(&self.queue.currentQueueDepth)))
 
 	// Nothing is clearing the queue, so clear it so we don't get stuck during close
 	for _, _ = range(rows) {
@@ -930,9 +930,9 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_Dequeued() {
 	}
 
 	wg.Wait()
-	require.Equal(self.T(), len(rows), int(atomic.LoadInt32(&self.queue.currentQueueDepth)))
-	require.Equal(self.T(), 4, int(atomic.LoadInt32(&self.queue.postedEvents)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.failedEvents)))
+	require.Equal(self.T(), len(rows), int(atomic.LoadInt64(&self.queue.currentQueueDepth)))
+	require.Equal(self.T(), 4, int(atomic.LoadInt64(&self.queue.postedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.failedEvents)))
 	cancel()
 }
 
@@ -972,7 +972,7 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedFailure() {
 				if !ok {
 					break L
 				}
-				atomic.AddInt32(&self.queue.currentQueueDepth, -1)
+				atomic.AddInt64(&self.queue.currentQueueDepth, -1)
 
 				if count == 2 {
 					server.Close()
@@ -1006,10 +1006,10 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedFailure() {
 	}
 
 	wg.Wait()
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.currentQueueDepth)))
-	require.Equal(self.T(), 2, int(atomic.LoadInt32(&self.queue.failedEvents)))
-	require.Equal(self.T(), 2, int(atomic.LoadInt32(&self.queue.postedEvents)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.droppedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.currentQueueDepth)))
+	require.Equal(self.T(), 2, int(atomic.LoadInt64(&self.queue.failedEvents)))
+	require.Equal(self.T(), 2, int(atomic.LoadInt64(&self.queue.postedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.droppedEvents)))
 	cancel()
 	self.queue = nil
 }
@@ -1049,7 +1049,7 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedConnRefused() {
 				if !ok {
 					break L
 				}
-				atomic.AddInt32(&self.queue.currentQueueDepth, -1)
+				atomic.AddInt64(&self.queue.currentQueueDepth, -1)
 
 				if count == 2 {
 					self.queue.endpointUrl = "http://localhost:1" + apiEndpoint
@@ -1081,9 +1081,9 @@ func (self *LogScaleQueueTestSuite) TestQueueEventsOpen_DequeuedConnRefused() {
 	}
 
 	wg.Wait()
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.currentQueueDepth)))
-	require.Equal(self.T(), 2, int(atomic.LoadInt32(&self.queue.failedEvents)))
-	require.Equal(self.T(), 2, int(atomic.LoadInt32(&self.queue.postedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.currentQueueDepth)))
+	require.Equal(self.T(), 2, int(atomic.LoadInt64(&self.queue.failedEvents)))
+	require.Equal(self.T(), 2, int(atomic.LoadInt64(&self.queue.postedEvents)))
 	cancel()
 	self.queue = nil
 }
@@ -1109,11 +1109,11 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_Working() {
 
 	self.queue.Close(self.scope)
 
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.currentQueueDepth)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.failedEvents)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.droppedEvents)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.totalRetries)))
-	require.Equal(self.T(), nRows, int(atomic.LoadInt32(&self.queue.postedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.currentQueueDepth)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.failedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.droppedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.totalRetries)))
+	require.Equal(self.T(), nRows, int(atomic.LoadInt64(&self.queue.postedEvents)))
 	self.queue = nil
 }
 
@@ -1145,12 +1145,12 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownWhileFailing() {
 
 	self.queue.Close(self.scope)
 
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.currentQueueDepth)))
-	require.Equal(self.T(), 1, int(atomic.LoadInt32(&self.queue.failedEvents)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.totalRetries)))
-	require.Equal(self.T(), (nRows / 2) - 1, int(atomic.LoadInt32(&self.queue.droppedEvents)))
-	require.Equal(self.T(), nRows / 2, int(atomic.LoadInt32(&self.queue.postedEvents)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.totalRetries)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.currentQueueDepth)))
+	require.Equal(self.T(), 1, int(atomic.LoadInt64(&self.queue.failedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.totalRetries)))
+	require.Equal(self.T(), (nRows / 2) - 1, int(atomic.LoadInt64(&self.queue.droppedEvents)))
+	require.Equal(self.T(), nRows / 2, int(atomic.LoadInt64(&self.queue.postedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.totalRetries)))
 	self.queue = nil
 }
 
@@ -1201,11 +1201,11 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownAfterRecovery() {
 
 	self.queue.Close(self.scope)
 
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.currentQueueDepth)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.droppedEvents)))
-	require.Equal(self.T(), nRows - 1, int(atomic.LoadInt32(&self.queue.postedEvents)))
-	require.Equal(self.T(), 1, int(atomic.LoadInt32(&self.queue.totalRetries)))
-	require.Equal(self.T(), 1, int(atomic.LoadInt32(&self.queue.failedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.currentQueueDepth)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.droppedEvents)))
+	require.Equal(self.T(), nRows - 1, int(atomic.LoadInt64(&self.queue.postedEvents)))
+	require.Equal(self.T(), 1, int(atomic.LoadInt64(&self.queue.totalRetries)))
+	require.Equal(self.T(), 1, int(atomic.LoadInt64(&self.queue.failedEvents)))
 	self.queue = nil
 }
 
@@ -1255,11 +1255,11 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_4xx() {
 
 	self.queue.Close(self.scope)
 
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.currentQueueDepth)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.droppedEvents)))
-	require.Equal(self.T(), 95, int(atomic.LoadInt32(&self.queue.postedEvents)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt32(&self.queue.totalRetries)))
-	require.Equal(self.T(), 5, int(atomic.LoadInt32(&self.queue.failedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.currentQueueDepth)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.droppedEvents)))
+	require.Equal(self.T(), 95, int(atomic.LoadInt64(&self.queue.postedEvents)))
+	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.totalRetries)))
+	require.Equal(self.T(), 5, int(atomic.LoadInt64(&self.queue.failedEvents)))
 	self.queue = nil
 }
 
