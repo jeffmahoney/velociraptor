@@ -37,6 +37,10 @@ parameters:
     description: Count of events to batch prior to sending
     type: int
     default: 2000
+  - name: statsInterval
+    description: Interval to post statistics to log (in seconds, 0 to disable)
+    type: int
+    default: 600
   - name: debug
     description: Enable verbose logging
     type: bool
@@ -68,4 +72,5 @@ sources:
           batching_timeout_ms=batchingTimeoutMs,
           event_batch_size=eventBatchSize,
           http_timeout=httpTimeout,
-          debug=debug)
+          debug=debug,
+          stats_interval=statsInterval)

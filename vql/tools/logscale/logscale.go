@@ -35,10 +35,10 @@ var (
 	defaultHttpClientTimeoutDuration = time.Duration(10) * time.Second
 	defaultNWorkers = 1
 	defaultMaxRetries = 7200 // ~2h more or less
+	defaultStatsInterval = time.Duration(30) * time.Second
 
 	gMaxPoll = time.Duration(60) * time.Second
 	gMaxPollDev = 30
-	gStatsLogPeriod = time.Duration(30) * time.Second
 	gNextId int64 = 0
 
 	apiEndpoint = "/v1/ingest/humio-structured"

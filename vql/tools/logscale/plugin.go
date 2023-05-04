@@ -27,6 +27,7 @@ type logscalePluginArgs struct {
 	BatchingTimeoutMs  int      `vfilter:"optional,field=batching_timeout_ms,doc=Timeout between posts (default: 3000ms)"`
 	EventBatchSize	   int	    `vfilter:"optional,field=event_batch_size,doc=Items to batch before post (default: 2000)"`
 	TagFields	   []string `vfilter:"optional,field=tag_fields,doc=Name of fields to be used as tags. Fields can be renamed using =<newname>"`
+	StatsInterval	   int	    `vfilter:"optional,field=stats_interval,doc=Interval, in seconds, to post statistics to the log (default: 600, 0 to disable)"`
 	Debug		   bool     `vfilter:"optional,field=debug,doc=Enable verbose logging."`
 }
 
@@ -82,6 +83,14 @@ func (args *logscalePluginArgs) validate() error {
 			Arg: "http_timeout",
 			Err: fmt.Errorf("invalid value %v - must be 0 or positive integer",
 					args.HttpTimeoutSec),
+		}
+	}
+
+	if args.StatsInterval < 0 {
+		return errInvalidArgument{
+			Arg: "stats_interval",
+			Err: fmt.Errorf("invalid value %v - must be 0 or positive integer",
+					args.StatsInterval),
 		}
 	}
 
@@ -211,8 +220,17 @@ func (self logscalePlugin) Call(ctx context.Context,
 		queue.Log(scope, "plugin started (%v threads)", queue.WorkerCount())
 
 		rowChan := arg.Query.Eval(ctx, scope)
-		ticker := time.NewTicker(gStatsLogPeriod)
-		defer ticker.Stop()
+
+
+		var tickerChan <- chan time.Time
+		if arg.StatsInterval != 0 {
+			ticker := time.NewTicker(time.Duration(arg.StatsInterval))
+			tickerChan = ticker.C
+			defer ticker.Stop()
+		} else {
+			tickerChan = make(chan time.Time)
+		}
+
 		done:
 		for {
 			select {
@@ -224,7 +242,7 @@ func (self logscalePlugin) Call(ctx context.Context,
 				}
 				rowData := vfilter.RowToDict(ctx, scope, row)
 				queue.QueueEvent(rowData)
-			case <-ticker.C:
+			case <-tickerChan:
 				queue.PostStats(scope)
 			}
 		}

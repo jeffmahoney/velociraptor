@@ -121,6 +121,26 @@ func (self *LogScalePluginTestSuite) TestValidateHttpClientTimeoutDurationNegati
 	require.ErrorAs(self.T(), err, &errInvalidArgument{})
 }
 
+func (self *LogScalePluginTestSuite) TestValidateStatsIntervalDurationValid() {
+	self.args.StatsInterval = 10
+	err := self.args.validate()
+	require.NoError(self.T(), err)
+}
+
+func (self *LogScalePluginTestSuite) TestValidateStatsIntervalDurationZero() {
+	self.args.StatsInterval = 0
+	err := self.args.validate()
+	require.NoError(self.T(), err)
+}
+
+func (self *LogScalePluginTestSuite) TestValidateStatsIntervalDurationNegative() {
+	self.args.StatsInterval = -10
+	err := self.args.validate()
+	require.NotNil(self.T(), err)
+	require.ErrorAs(self.T(), err, &errInvalidArgument{})
+}
+
+
 func (self *LogScalePluginTestSuite) CheckApply() {
 	// URL and Token are assumed to be correct
 
