@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"math/rand"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,7 +36,7 @@ var (
 	defaultNWorkers = 1
 	defaultMaxRetries = 7200 // ~2h more or less
 
-	gMaxPoll = 60
+	gMaxPoll = time.Duration(60) * time.Second
 	gMaxPollDev = 30
 	gStatsLogPeriod = time.Duration(30) * time.Second
 	gNextId int64 = 0
@@ -57,15 +57,6 @@ func (err errInvalidArgument) Is(other error) bool {
 	return errors.Is(err.Err, other)
 }
 
-type errHttpClientError struct {
-	StatusCode int
-	Status string
-}
-
-func (err errHttpClientError) Error() string {
-	return err.Status
-}
-
 type errMaxRetriesExceeded struct {
 	LastError error
 	Retries int
@@ -78,6 +69,10 @@ func (err errMaxRetriesExceeded) Error() string {
 
 func (err errMaxRetriesExceeded) Unwrap() error {
 	return err.LastError
+}
+
+func (err errMaxRetriesExceeded) Timeout() bool {
+	return os.IsTimeout(err.LastError)
 }
 
 var errQueueOpened = errors.New("Cannot modify parameters of open queue")
@@ -345,6 +340,13 @@ func (self *LogScaleQueue) Open(parentCtx context.Context, scope vfilter.Scope,
 	self.id = int(atomic.AddInt64(&gNextId, 1))
 	self.logPrefix = fmt.Sprintf("logscale/%v: ", self.id)
 
+	self.currentQueueDepth = int64(0)
+	self.droppedEvents     = int64(0)
+	self.postedEvents      = int64(0)
+	self.postedBytes       = int64(0)
+	self.failedEvents      = int64(0)
+	self.totalRetries      = int64(0)
+
 	options := api.QueueOptions{
 		DisableFileBuffering: false,
 		FileBufferLeaseSize: 100,
@@ -466,46 +468,28 @@ func (self *LogScaleQueue) rowToPayload(ctx context.Context, scope vfilter.Scope
 	return payload
 }
 
-func (self *LogScaleQueue) postBytes(scope vfilter.Scope, data []byte, count int) (error, bool) {
+func (self *LogScaleQueue) postBytes(scope vfilter.Scope, data []byte, count int) (*http.Response, error) {
 	req, err := http.NewRequest("POST", self.endpointUrl, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
 	req.Header.Add("User-Agent", constants.USER_AGENT)
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", self.authToken))
 
 	resp, err := self.httpClient.Do(req)
-	if err != nil && err != io.EOF {
-		self.Log(scope, "request failed: %s", err)
-		return err, true
-	}
-	defer resp.Body.Close()
-
-	self.Debug(scope, "sent %d events %d bytes, response with status: %v",
-		   count, len(data), resp.Status)
-	body := &bytes.Buffer{}
-	_, err = io.Copy(body, resp.Body)
-	if err != nil {
-		self.Log(scope, "copy of response failed: %v, %v", resp.Status, err)
-		return err, false
+	if resp != nil {
+		self.Debug(scope, "sent %d events %d bytes, response with status: %v",
+			   count, len(data), resp.Status)
 	}
 
-	if resp.StatusCode != 200 {
-		self.Log(scope, "request failed: %v, %v", resp.Status, body)
-		retry := true
-		// In general these will require restarting the artifact, which will
-		// lose the events anyway.
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-			retry = false
-		}
-		return errHttpClientError{
-			StatusCode: resp.StatusCode,
-			Status: resp.Status,
-			}, retry
-	}
-
-	return nil, false
+	return resp, err
 }
 
-var errQueueShutdown = errors.New("Queue shutdown while server was not accepting events.")
+func (self *LogScaleQueue) shouldRetryRequest(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	return retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
+}
 
 func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 				   rows []*ordereddict.Dict) error {
@@ -531,29 +515,37 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 		return fmt.Errorf("Failed to encode %v: %w", rows, err)
 	}
 
-	failed := false
 	retries := 0
 	for {
-		err, retry := self.postBytes(scope, data, nRows)
-		if err == nil || err == io.EOF {
-			if failed {
+		resp, err := self.postBytes(scope, data, nRows)
+
+		// Successful post, nothing more to do
+		if err == nil && resp.StatusCode == http.StatusOK {
+			if retries > 0 {
 				self.Log(scope, "Retry successful, pushing backlog.")
 			}
-			if err == nil {
-				atomic.AddInt64(&self.postedEvents, int64(nRows))
-				atomic.AddInt64(&self.postedBytes, int64(len(data)))
-			}
-			return err
+			atomic.AddInt64(&self.postedEvents, int64(nRows))
+			atomic.AddInt64(&self.postedBytes, int64(len(data)))
+
+			return nil
 		}
 
-		failed = true
-		wait := time.Duration(gMaxPoll + rand.Intn(gMaxPollDev)) * time.Second
+		body := &bytes.Buffer{}
+		if err != nil {
+			self.Log(scope, "request failed: %s", err)
+		} else {
+			_, err = io.Copy(body, resp.Body)
+			if err != nil {
+				resp.Body.Close()
+				self.Log(scope, "copy of response failed: %v, %v", resp.Status, err)
+				return err
+			}
+			self.Log(scope, "request failed: %v, %s", resp.Status, body)
+			resp.Body.Close()
+		}
 
-		if ctx.Err() != nil {
-			self.Log(scope, "Failed to POST events while queue is closing.  Dropping remaining events.")
-			atomic.AddInt64(&self.failedEvents, int64(nRows))
-			return errQueueShutdown
-		} else if retry {
+		retry, _ := self.shouldRetryRequest(ctx, resp, err)
+		if retry {
 			retries += 1
 			if self.maxRetries >= 0 && retries > self.maxRetries {
 				atomic.AddInt64(&self.failedEvents, int64(nRows))
@@ -562,26 +554,28 @@ func (self *LogScaleQueue) postEvents(ctx context.Context, scope vfilter.Scope,
 					Retries: retries,
 				}
 			}
+
+			wait := retryablehttp.DefaultBackoff(1 * time.Second, gMaxPoll, retries, resp)
+			atomic.AddInt64(&self.totalRetries, 1)
 			self.Log(scope, "Failed to POST events, will attempt retry #%v in %v.",
 				 retries, wait)
-		} else {
-			// We want to wait after 4xx errors or we'll just spam the server
-			// if something is wrong.
-			self.Log(scope, "Failed to POST events, will not retry due to client error. Dropped %v events. Waiting %v before attempting next submission.", nRows, wait)
-			atomic.AddInt64(&self.failedEvents, int64(nRows))
+
+			clock.Sleep(wait)
+			continue
 		}
 
-		select {
-		case <- ctx.Done():
-			return errQueueShutdown
-		case <-clock.After(wait):
-		}
-
-		if retry {
-			atomic.AddInt64(&self.totalRetries, 1)
-		} else {
+		atomic.AddInt64(&self.failedEvents, int64(nRows))
+		if errors.Is(err, context.Canceled) {
+			self.Log(scope, "Failed to POST %v events while queue is closing.  Dropping remaining events.", nRows)
 			return err
 		}
+
+		if err == nil {
+			err = fmt.Errorf("http error: %v, \"%s\"", resp.Status, body)
+		}
+
+		self.Log(scope, "Failed to post events, lost %v events: %v", nRows, err)
+		return err
 	}
 }
 
@@ -654,12 +648,7 @@ func (self *LogScaleQueue) processEvents(ctx context.Context, scope vfilter.Scop
 			// is permanent. Those will be logged and events dropped.
 			err := self.postEvents(ctx, scope, postData)
 			if err != nil {
-				self.Log(scope, "Failed to post events, lost events: %v", err)
-
-				if errors.Is(err, errQueueShutdown) {
-					self.Debug(scope, "worker exiting due to queue shutdown")
-					dropEvents = true
-				}
+				dropEvents = ctx.Err() != nil
 			}
 
 			postData = []*ordereddict.Dict{}

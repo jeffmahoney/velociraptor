@@ -2,9 +2,9 @@ package logscale
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"net"
 	"net/http"
 	"net/http/httptest"
 
@@ -631,7 +630,11 @@ func (self *LogScaleQueueTestSuite) TestPostBytesValid() {
 
 	data := self.preparePayloads(payloads)
 
-	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
+	resp, err := self.queue.postBytes(self.scope, data, len(payloads))
+	require.NoError(self.T(), err)
+	require.NotNil(self.T(), resp)
+
+	retry, err := self.queue.shouldRetryRequest(self.ctx, resp, err)
 	require.NoError(self.T(), err)
 	require.False(self.T(), retry)
 }
@@ -648,7 +651,11 @@ func (self *LogScaleQueueTestSuite) TestPostBytesEmpty() {
 
 	data := self.preparePayloads(payloads)
 
-	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
+	resp, err := self.queue.postBytes(self.scope, data, len(payloads))
+	require.NoError(self.T(), err)
+	require.NotNil(self.T(), resp)
+
+	retry, err := self.queue.shouldRetryRequest(self.ctx, resp, err)
 	require.NoError(self.T(), err)
 	require.False(self.T(), retry)
 }
@@ -664,10 +671,12 @@ func (self *LogScaleQueueTestSuite) TestPostBytesEmptyTimeout() {
 
 	data := self.preparePayloads(payloads)
 
-	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
-	var netErr net.Error
-	require.ErrorAs(self.T(), err, &netErr)
-	require.True(self.T(), netErr.Timeout())
+	resp, err := self.queue.postBytes(self.scope, data, len(payloads))
+	require.True(self.T(), os.IsTimeout(err))
+	require.Nil(self.T(), resp)
+
+	retry, err := self.queue.shouldRetryRequest(self.ctx, resp, err)
+	require.NoError(self.T(), err)
 	require.True(self.T(), retry)
 }
 
@@ -679,10 +688,12 @@ func (self *LogScaleQueueTestSuite) TestPostBytesEmptyConnRefused() {
 
 	data := self.preparePayloads(payloads)
 
-	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
-	var netErr net.Error
-	require.ErrorAs(self.T(), err, &netErr)
+	resp, err := self.queue.postBytes(self.scope, data, len(payloads))
 	require.ErrorIs(self.T(), err, syscall.ECONNREFUSED)
+	require.Nil(self.T(), resp)
+
+	retry, err := self.queue.shouldRetryRequest(self.ctx, resp, err)
+	require.NoError(self.T(), err)
 	require.True(self.T(), retry)
 }
 
@@ -703,11 +714,14 @@ func (self *LogScaleQueueTestSuite) TestPostBytesNoEvents() {
 	require.NoError(self.T(), err)
 
 	data := self.preparePayloads(payloads)
-	err, retry := self.queue.postBytes(self.scope, data, len(payloads))
-	clientError := errHttpClientError{}
-	require.True(self.T(), errors.As(err, &clientError))
-	require.Equal(self.T(), clientError.StatusCode, http.StatusBadRequest)
+	resp, err := self.queue.postBytes(self.scope, data, len(payloads))
+	require.NoError(self.T(), err)
+	require.NotNil(self.T(), resp)
+	require.Equal(self.T(), resp.StatusCode, http.StatusBadRequest)
+
+	retry, err := self.queue.shouldRetryRequest(self.ctx, resp, err)
 	require.False(self.T(), retry)
+	require.NoError(self.T(), err)
 }
 
 func (self *LogScaleQueueTestSuite) TestPostEventsEmpty() {
@@ -755,9 +769,7 @@ func (self *LogScaleQueueTestSuite) TestPostEventsSingleTimeout() {
 	expectedErr := errMaxRetriesExceeded{}
 	require.ErrorAs(self.T(), err, &expectedErr)
 
-	var netErr net.Error
-	require.ErrorAs(self.T(), err, &netErr)
-	require.True(self.T(), netErr.Timeout())
+	require.True(self.T(), os.IsTimeout(err))
 }
 
 func (self *LogScaleQueueTestSuite) TestPostEventsSingleConnRefused() {
@@ -775,9 +787,6 @@ func (self *LogScaleQueueTestSuite) TestPostEventsSingleConnRefused() {
 	require.NotNil(self.T(), err)
 	expectedErr := errMaxRetriesExceeded{}
 	require.ErrorAs(self.T(), err, &expectedErr)
-
-	var netErr net.Error
-	require.ErrorAs(self.T(), err, &netErr)
 	require.ErrorIs(self.T(), err, syscall.ECONNREFUSED)
 }
 
@@ -817,10 +826,7 @@ func (self *LogScaleQueueTestSuite) TestPostEventsMultipleTimeout() {
 	require.NotNil(self.T(), err)
 	expectedErr := errMaxRetriesExceeded{}
 	require.ErrorAs(self.T(), err, &expectedErr)
-
-	var netErr net.Error
-	require.ErrorAs(self.T(), err, &netErr)
-	require.True(self.T(), netErr.Timeout())
+	require.True(self.T(), os.IsTimeout(expectedErr))
 }
 
 func (self *LogScaleQueueTestSuite) TestPostEventsMultipleConnRefused() {
@@ -841,9 +847,6 @@ func (self *LogScaleQueueTestSuite) TestPostEventsMultipleConnRefused() {
 	require.NotNil(self.T(), err)
 	expectedErr := errMaxRetriesExceeded{}
 	require.ErrorAs(self.T(), err, &expectedErr)
-
-	var netErr net.Error
-	require.ErrorAs(self.T(), err, &netErr)
 	require.ErrorIs(self.T(), err, syscall.ECONNREFUSED)
 }
 
@@ -1124,9 +1127,13 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownWhileFailing() {
 	server := self.startMockServer()
 	defer server.Close()
 
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
 	self.queue.SetEventBatchSize(1)
 	err := self.queue.addDebugCallback(nRows / 2, func(count int) {
 			self.queue.endpointUrl = "http://localhost:1" + apiEndpoint
+			wg.Done()
 		})
 
 	err = self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
@@ -1144,14 +1151,14 @@ func (self *LogScaleQueueTestSuite) TestProcessEvents_ShutdownWhileFailing() {
 		self.queue.QueueEvent(row)
 	}
 
+	wg.Wait()
 	self.queue.Close(self.scope)
 
 	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.currentQueueDepth)))
-	require.Equal(self.T(), 1, int(atomic.LoadInt64(&self.queue.failedEvents)))
 	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.totalRetries)))
 	require.Equal(self.T(), (nRows / 2) - 1, int(atomic.LoadInt64(&self.queue.droppedEvents)))
 	require.Equal(self.T(), nRows / 2, int(atomic.LoadInt64(&self.queue.postedEvents)))
-	require.Equal(self.T(), 0, int(atomic.LoadInt64(&self.queue.totalRetries)))
+	require.Equal(self.T(), 1, int(atomic.LoadInt64(&self.queue.failedEvents)))
 	self.queue = nil
 }
 
