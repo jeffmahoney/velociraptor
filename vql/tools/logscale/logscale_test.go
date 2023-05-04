@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"net"
 	"net/http"
 	"net/http/httptest"
 
@@ -63,6 +64,7 @@ type LogScaleQueueTestSuite struct {
 	start		time.Time
 
 	restoreClock	func()
+	wantConnRefused bool
 }
 
 func formatTimestamp(ts time.Time) string {
@@ -84,6 +86,8 @@ func (self *LogScaleQueueTestSuite) SetupTest() {
 
 	self.ctx = context.Background()
 	self.populateClients()
+	self.queue.SetHttpTransport(self.getHttpTransport())
+	self.wantConnRefused = false
 }
 
 func (self *LogScaleQueueTestSuite) populateClients() {
@@ -126,6 +130,24 @@ func (self *LogScaleQueueTestSuite) populateClients() {
         vtesting.WaitUntil(2*time.Second, self.T(), func() bool {
                 return indexer.(*indexing.Indexer).IsReady()
         })
+}
+
+
+func (self *LogScaleQueueTestSuite) getHttpTransport() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	realDialContext := transport.DialContext
+
+	dc := func (ctx context.Context, network, addr string) (net.Conn, error) {
+		if self.wantConnRefused {
+			return nil, syscall.ECONNREFUSED
+		} else {
+			return realDialContext(ctx, network, addr)
+		}
+	}
+
+	transport.DialContext = dc
+	return transport
 }
 
 func (self *LogScaleQueueTestSuite) getScope() vfilter.Scope {
@@ -657,6 +679,8 @@ func (self *LogScaleQueueTestSuite) TestPostBytesEmpty() {
 func (self *LogScaleQueueTestSuite) TestPostBytesEmptyConnRefused() {
 	payloads := []*LogScalePayload{}
 
+	self.wantConnRefused = true
+
 	err := self.queue.Open(self.ctx, self.scope, "http://localhost:1", validAuthToken)
 	require.NoError(self.T(), err)
 
@@ -730,6 +754,8 @@ func (self *LogScaleQueueTestSuite) TestPostEventsSingle() {
 func (self *LogScaleQueueTestSuite) TestPostEventsSingleConnRefused() {
 	rows := []*ordereddict.Dict{}
 
+	self.wantConnRefused = true
+
 	rows = append(rows, generateRow())
 
 	err := self.queue.Open(self.ctx, self.scope, "http://localhost:1", validAuthToken)
@@ -762,6 +788,8 @@ func (self *LogScaleQueueTestSuite) TestPostEventsMultiple() {
 
 func (self *LogScaleQueueTestSuite) TestPostEventsMultipleConnRefused() {
 	rows := []*ordereddict.Dict{}
+
+	self.wantConnRefused = true
 
 	rows = append(rows, generateRow())
 	rows = append(rows, generateRow())
