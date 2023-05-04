@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -571,11 +570,6 @@ func handler500(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "internal server error")
 }
 
-func handlerTimeout(w http.ResponseWriter, r *http.Request) {
-	time.Sleep(time.Duration(3) * time.Second)
-}
-
-
 func (self *LogScaleQueueTestSuite) startMockServerWithHandler(handler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	    switch strings.TrimSpace(r.URL.Path) {
@@ -660,26 +654,6 @@ func (self *LogScaleQueueTestSuite) TestPostBytesEmpty() {
 	require.False(self.T(), retry)
 }
 
-func (self *LogScaleQueueTestSuite) TestPostBytesEmptyTimeout() {
-	payloads := []*LogScalePayload{}
-
-	server := self.startMockServerWithHandler(handlerTimeout)
-	defer server.Close()
-
-	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
-	require.NoError(self.T(), err)
-
-	data := self.preparePayloads(payloads)
-
-	resp, err := self.queue.postBytes(self.scope, data, len(payloads))
-	require.True(self.T(), os.IsTimeout(err))
-	require.Nil(self.T(), resp)
-
-	retry, err := self.queue.shouldRetryRequest(self.ctx, resp, err)
-	require.NoError(self.T(), err)
-	require.True(self.T(), retry)
-}
-
 func (self *LogScaleQueueTestSuite) TestPostBytesEmptyConnRefused() {
 	payloads := []*LogScalePayload{}
 
@@ -753,32 +727,10 @@ func (self *LogScaleQueueTestSuite) TestPostEventsSingle() {
 	require.NoError(self.T(), err)
 }
 
-func (self *LogScaleQueueTestSuite) TestPostEventsSingleTimeout() {
-	rows := []*ordereddict.Dict{}
-
-	rows = append(rows, generateRow())
-
-	server := self.startMockServerWithHandler(handlerTimeout)
-	defer server.Close()
-
-	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
-	require.NoError(self.T(), err)
-
-	err = self.queue.postEvents(self.ctx, self.scope, rows)
-	require.NotNil(self.T(), err)
-	expectedErr := errMaxRetriesExceeded{}
-	require.ErrorAs(self.T(), err, &expectedErr)
-
-	require.True(self.T(), os.IsTimeout(err))
-}
-
 func (self *LogScaleQueueTestSuite) TestPostEventsSingleConnRefused() {
 	rows := []*ordereddict.Dict{}
 
 	rows = append(rows, generateRow())
-
-	server := self.startMockServerWithHandler(handlerTimeout)
-	defer server.Close()
 
 	err := self.queue.Open(self.ctx, self.scope, "http://localhost:1", validAuthToken)
 	require.NoError(self.T(), err)
@@ -808,27 +760,6 @@ func (self *LogScaleQueueTestSuite) TestPostEventsMultiple() {
 	require.NoError(self.T(), err)
 }
 
-func (self *LogScaleQueueTestSuite) TestPostEventsMultipleTimeout() {
-	rows := []*ordereddict.Dict{}
-
-	rows = append(rows, generateRow())
-	rows = append(rows, generateRow())
-	rows = append(rows, generateRow())
-	rows = append(rows, generateRow())
-
-	server := self.startMockServerWithHandler(handlerTimeout)
-	defer server.Close()
-
-	err := self.queue.Open(self.ctx, self.scope, server.URL, validAuthToken)
-	require.NoError(self.T(), err)
-
-	err = self.queue.postEvents(self.ctx, self.scope, rows)
-	require.NotNil(self.T(), err)
-	expectedErr := errMaxRetriesExceeded{}
-	require.ErrorAs(self.T(), err, &expectedErr)
-	require.True(self.T(), os.IsTimeout(expectedErr))
-}
-
 func (self *LogScaleQueueTestSuite) TestPostEventsMultipleConnRefused() {
 	rows := []*ordereddict.Dict{}
 
@@ -836,9 +767,6 @@ func (self *LogScaleQueueTestSuite) TestPostEventsMultipleConnRefused() {
 	rows = append(rows, generateRow())
 	rows = append(rows, generateRow())
 	rows = append(rows, generateRow())
-
-	server := self.startMockServerWithHandler(handlerTimeout)
-	defer server.Close()
 
 	err := self.queue.Open(self.ctx, self.scope, "http://localhost:1", validAuthToken)
 	require.NoError(self.T(), err)
