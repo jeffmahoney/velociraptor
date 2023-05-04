@@ -353,21 +353,17 @@ func (self *LogScaleQueue) Open(parentCtx context.Context, scope vfilter.Scope,
 		OwnerName: "logscale-plugin",
 	}
 
-	// Canceling the listener's context prevents it from clearing its queue
-	ctx, cancel := context.WithCancel(context.Background())
+	// If we allow the listener to be canceled with the rest of our context, it will stop
+	// processing events immediately and its queue will not be flushed.
+	// If we Close() it as part of the queue Close(), it will flush its queue
+	// and then cancel its own internal context, cleaning itself up.
+	ctx := context.Background()
 	self.listener, err = directory.NewListener(self.config, ctx, options.OwnerName, options)
 	if err != nil {
 		return err
 	}
 
-	err = vql_subsystem.GetRootScope(scope).AddDestructor(func() {
-		cancel()
-		if self.listener != nil {
-			self.listener.Close()
-		}
-	})
-
-
+	// We'll cancel these in Close()
 	ctx, self.cancel = context.WithCancel(parentCtx)
 	self.opened = true
 	for i := 0; i < self.nWorkers; i++ {
@@ -684,11 +680,17 @@ func (self *LogScaleQueue) Close(scope vfilter.Scope) {
 	}
 
 	// Order is important:
-	// Closing the listener after canceling it will drop all remaining events, so
-	// we can't cancel it.
-	// If we close the listener before canceling the workers, the workers will
-	// continue to retry posting events after failure and closing could take a
-	// very long time.
+	// 1. We cancel the worker context.  The workers will continue posting events
+	//    until the listener's Output channel is closed.  If a worker encounters
+	//    a failure, it will drop all remaining events and exit.
+	// 2. We close the listener.  This causes the listener to decline accepting
+	//    any new events and to start flushing its queue.  If we were to cancel
+	//    its context directly, it would partially flush the queue and then drop
+	//    remaining events on the floor.  It cleans itself up during close.
+	// 3. We wait for workers.  Once the listener flushes its queue, it will close
+	//    its Output channel, triggering the workers to exit.
+	// 4. Mark the listener nil to catch bugs that indicate that the listener is
+	//    still somehow active.
 	self.cancel()
 
 	// Stop listening for more events
