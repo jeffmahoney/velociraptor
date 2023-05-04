@@ -212,6 +212,7 @@ func (self logscalePlugin) Call(ctx context.Context,
 
 		rowChan := arg.Query.Eval(ctx, scope)
 		ticker := time.NewTicker(gStatsLogPeriod)
+		defer ticker.Stop()
 		done:
 		for {
 			select {
@@ -225,7 +226,6 @@ func (self logscalePlugin) Call(ctx context.Context,
 				queue.QueueEvent(rowData)
 			case <-ticker.C:
 				queue.PostStats(scope)
-				ticker.Reset(gStatsLogPeriod)
 			}
 		}
 
