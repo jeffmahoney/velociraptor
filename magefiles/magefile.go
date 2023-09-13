@@ -147,6 +147,8 @@ func (self Builder) Run() error {
 	env := self.Env()
 
 	bpf := NewBPFBuildEnv()
+	bpf.SetCC(self.cc)
+	bpf.SetArch(self.arch)
 	buildBpf, err := bpf.Build()
 	if buildBpf {
 		tags += bpf.Tags() + " "

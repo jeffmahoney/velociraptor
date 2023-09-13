@@ -26,6 +26,8 @@ type BPFBuildEnv struct {
 	bpfarch   string
 	bpftool   string
 	built     bool
+	arch      string
+	cc        string
 }
 
 func (self *BPFBuildEnv) outputDir() string {
@@ -93,7 +95,18 @@ func (self *BPFBuildEnv) buildLibbpf() error {
 	mg.Deps(self.updateSubmodule)
 	mg.Deps(self.buildVmlinuxDotH)
 
-	return sh.RunWith(self.Env(), "make", "-C", self.baseDir, "libbpfgo-static")
+	args := []string{
+			"-C",
+			self.baseDir,
+			"libbpfgo-static",
+	}
+
+	if self.cc != "" {
+		args = append(args, "CC=" + self.cc)
+	}
+
+
+	return sh.RunWith(self.Env(), "make", args...)
 }
 
 func (self *BPFBuildEnv) buildModule(targetPath string) error {
@@ -130,6 +143,14 @@ func (self *BPFBuildEnv) buildModule(targetPath string) error {
 	return sh.Run("llvm-strip", "-g", targetPath)
 }
 
+func (self *BPFBuildEnv) SetCC(cc string) {
+	self.cc = cc
+}
+
+func (self *BPFBuildEnv) SetArch(arch string) {
+	self.arch = arch
+}
+
 func (self *BPFBuildEnv) Build() (bool, error) {
 	build := os.Getenv("BUILD_BPF_PLUGINS")
 	disabled := false
@@ -144,10 +165,10 @@ func (self *BPFBuildEnv) Build() (bool, error) {
 		return false, nil
 	}
 
-	self.clangarch = runtime.GOARCH
-	self.bpfarch = runtime.GOARCH
+	self.clangarch = self.arch
+	self.bpfarch = self.arch
 
-	switch runtime.GOARCH {
+	switch self.arch {
 	case "amd64":
 		self.clangarch = "x86_64"
 		self.bpfarch = "x86"
