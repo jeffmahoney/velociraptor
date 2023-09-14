@@ -59,9 +59,8 @@ jobs:
         mkdir ./output/
         export PATH=$PATH:~/go/bin/
         go run make.go -v Linux
-        make -C third_party/libbpfgo clean
+        BUILD_BPF_PLUGINS=1 go run make.go -v Linux
         go run make.go -v LinuxArm64
-        make -C third_party/libbpfgo clean
         go run make.go -v Windows
         go run make.go -v Windowsx86
         go run make.go -v DarwinBase

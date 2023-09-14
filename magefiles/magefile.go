@@ -148,8 +148,7 @@ func (self Builder) Run() error {
 
 	bpf := NewBPFBuildEnv()
 	bpf.SetCC(self.cc)
-	bpf.SetArch(self.arch)
-	buildBpf, err := bpf.Build()
+	buildBpf, err := bpf.Build(self.arch, self.goos)
 	if buildBpf {
 		tags += bpf.Tags() + " "
 		for k, v := range bpf.Env() {

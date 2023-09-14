@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,7 +27,6 @@ type BPFBuildEnv struct {
 	bpfarch   string
 	bpftool   string
 	built     bool
-	arch      string
 	cc        string
 }
 
@@ -147,11 +147,7 @@ func (self *BPFBuildEnv) SetCC(cc string) {
 	self.cc = cc
 }
 
-func (self *BPFBuildEnv) SetArch(arch string) {
-	self.arch = arch
-}
-
-func (self *BPFBuildEnv) Build() (bool, error) {
+func (self *BPFBuildEnv) Build(arch, goos string) (bool, error) {
 	build := os.Getenv("BUILD_BPF_PLUGINS")
 	disabled := false
 	required := false
@@ -161,14 +157,24 @@ func (self *BPFBuildEnv) Build() (bool, error) {
 	}
 
 	// Silently skip
-	if runtime.GOOS != "linux" || disabled || len(bpfModuleList) == 0 {
+	if disabled || len(bpfModuleList) == 0 {
 		return false, nil
 	}
 
-	self.clangarch = self.arch
-	self.bpfarch = self.arch
+	if (goos != "linux" || runtime.GOARCH != arch) {
+		errmsg := "BPF support can only be built natively and on Linux"
+		if required {
+			return false, errors.New(errmsg)
+		}
 
-	switch self.arch {
+		fmt.Printf("INFO: %s", errmsg)
+		return false, nil
+	}
+
+	self.clangarch = arch
+	self.bpfarch = arch
+
+	switch arch {
 	case "amd64":
 		self.clangarch = "x86_64"
 		self.bpfarch = "x86"
