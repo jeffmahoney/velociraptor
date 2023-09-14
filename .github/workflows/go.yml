@@ -56,9 +56,10 @@ jobs:
       # Uncomment the architectures you want here. NOTE: DarwinBase
       # does not include yara or modules with C compilers needed.
       run: |
-        mkdir ./output/
+        mkdir -p ./output/ ./third_party/libbpfgo/output
         export PATH=$PATH:~/go/bin/
-        go run make.go -v Linux
+        BUILD_BPF_PLUGINS=0 go run make.go -v Linux
+        cp vql/linux/bpflib/vmlinux_h/x86_64-vmlinux.h third_party/libbpfgo/output/vmlinux.h
         BUILD_BPF_PLUGINS=1 go run make.go -v Linux
         go run make.go -v LinuxArm64
         go run make.go -v Windows
