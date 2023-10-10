@@ -406,6 +406,11 @@
     type: bool
     description: If specified we run all queries asynchronously and combine the output.
   category: plugin
+- name: chattrsnoop
+  description: Shows when a file has the IMMUTABLE flag changed
+  type: Plugin
+  metadata:
+    permissions: MACHINE_STATE
 - name: cidr_contains
   description: |
     Calculates if an IP address falls within a range of CIDR specified
@@ -1192,6 +1197,11 @@
     plugin (see Windows.Events.DNSQueries)
   type: Plugin
   category: windows
+- name: dnssnoop
+  description: Snoop dns replies
+  type: Plugin
+  metadata:
+    permissions: MACHINE_STATE
 - name: efivariables
   description: Enumerate efi variables.
   type: Plugin
@@ -5647,6 +5657,11 @@
     are emitted. Any further queries are ignored.
   type: Plugin
   category: plugin
+- name: tcpsnoop
+  description: Report incoming/outgoing tcp connections
+  type: Plugin
+  metadata:
+    permissions: MACHINE_STATE
 - name: tempdir
   description: Create a temporary directory. The directory will be removed when the
     query ends.

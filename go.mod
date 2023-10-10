@@ -53,7 +53,7 @@ require (
 	github.com/jonboulle/clockwork v0.3.0 // indirect
 	github.com/juju/ratelimit v1.0.1
 	github.com/lib/pq v1.2.0
-	github.com/magefile/mage v1.11.0
+	github.com/magefile/mage v1.15.0
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.16
 	github.com/mattn/go-pointer v0.0.0-20180825124634-49522c3f3791
@@ -74,7 +74,7 @@ require (
 	github.com/sebdah/goldie/v2 v2.5.3
 	github.com/sergi/go-diff v1.2.0
 	github.com/sirupsen/logrus v1.8.1
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	github.com/tink-ab/tempfile v0.0.0-20180226111222-33beb0518f1a
 	github.com/xor-gate/ar v0.0.0-20170530204233-5c72ae81e2b7 // indirect
 	github.com/xor-gate/debpkg v1.0.0
@@ -108,11 +108,14 @@ require (
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.6
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.0.0
+	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/Velocidex/file-rotatelogs v0.0.0-20211221020724-d12e4dae4e11
 	github.com/Velocidex/grok v0.0.1
 	github.com/Velocidex/ordereddict v0.0.0-20221110130714-6a7cb85851cd
 	github.com/andybalholm/brotli v1.0.4
+	github.com/aquasecurity/libbpfgo v0.0.0-00010101000000-000000000000
+	github.com/aquasecurity/libbpfgo/helpers v0.0.0-00010101000000-000000000000
 	github.com/clayscode/Go-Splunk-HTTP/splunk/v2 v2.0.1-0.20221027171526-76a36be4fa02
 	github.com/coreos/go-oidc/v3 v3.4.0
 	github.com/evanphx/json-patch/v5 v5.6.0
@@ -120,6 +123,7 @@ require (
 	github.com/go-errors/errors v1.4.2
 	github.com/golang-jwt/jwt/v4 v4.4.3
 	github.com/golang/protobuf v1.5.3
+	github.com/google/gopacket v1.1.19
 	github.com/hashicorp/go-retryablehttp v0.7.2
 	github.com/hillu/go-archive-zip-crypto v0.0.0-20200712202847-bd5cf365dd44
 	github.com/hirochachacha/go-smb2 v1.1.0
@@ -144,7 +148,6 @@ require (
 	github.com/360EntSecGroup-Skylar/excelize v1.4.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.3.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.1.1 // indirect
-	github.com/Masterminds/semver/v3 v3.2.1 // indirect
 	github.com/PuerkitoBio/goquery v1.8.0 // indirect
 	github.com/alecthomas/colour v0.1.0 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
@@ -244,3 +247,8 @@ go 1.18
 replace github.com/alecthomas/chroma => github.com/Velocidex/chroma v0.6.8-0.20200418131129-82edc291369c
 
 replace github.com/go-errors/errors => github.com/Velocidex/errors v0.0.0-20221019164655-9ace6bf61e26
+
+// We'll always need the local version since we're building the C code.
+replace github.com/aquasecurity/libbpfgo => ./third_party/libbpfgo
+
+replace github.com/aquasecurity/libbpfgo/helpers => ./third_party/libbpfgo/helpers
